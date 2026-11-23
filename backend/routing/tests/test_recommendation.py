@@ -189,3 +189,42 @@ class TestLexicographicalRecommendation:
         assert rec["is_any_safe"] is False
         assert rec["recommended_route_id"] is None
         assert "CRITICAL SAFETY WARNING: No route is currently safe" in rec["explanation"]
+
+    def test_route_with_missing_weather_not_marked_safe(self):
+        # Route has missing weather data -> cannot be marked safe
+        route_missing = {
+            "id": "r_missing",
+            "name": "Route With Missing Data",
+            "duration_seconds": 10000,
+            "has_missing_weather": True,
+            "metrics": {
+                "severe_risk_miles": 0.0,
+                "high_risk_miles": 0.0,
+                "no_travel_miles": 0.0,
+                "unknown_risk_miles": 25.0,
+                "average_risk_score": 1.0,
+            }
+        }
+        rec = select_recommended_route([route_missing])
+        assert rec["is_any_safe"] is False
+        assert "incomplete" in rec["explanation"].lower() or "missing" in rec["explanation"].lower() or "unavailable" in rec["explanation"].lower()
+
+    def test_simulated_route_not_marked_safe(self):
+        # Route is simulated geometry fallback -> cannot be certified safe
+        route_sim = {
+            "id": "r_sim",
+            "name": "Simulated Route",
+            "duration_seconds": 10000,
+            "is_simulated": True,
+            "metrics": {
+                "severe_risk_miles": 0.0,
+                "high_risk_miles": 0.0,
+                "no_travel_miles": 0.0,
+                "unknown_risk_miles": 0.0,
+                "average_risk_score": 1.0,
+            }
+        }
+        rec = select_recommended_route([route_sim])
+        assert rec["is_any_safe"] is False
+        assert "simulated" in rec["explanation"].lower()
+

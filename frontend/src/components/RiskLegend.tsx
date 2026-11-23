@@ -33,6 +33,7 @@ export const RiskLegend: React.FC = () => {
             <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-800">High</span>
             <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-800">Severe</span>
             <span className="px-2 py-0.5 rounded-full bg-rose-900 text-white">No Travel</span>
+            <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-800">Data Unavailable</span>
           </div>
 
           <div className="text-slate-400">

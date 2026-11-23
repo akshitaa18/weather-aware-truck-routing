@@ -1,4 +1,4 @@
-export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Severe' | 'No Travel';
+export type RiskLevel = 'Low' | 'Moderate' | 'High' | 'Severe' | 'No Travel' | 'Data Unavailable';
 
 export type SamplingInterval = 10 | 25 | 50;
 
@@ -12,9 +12,10 @@ export interface GeocodedLocation {
 export interface CheckpointHourlyForecast {
   offset_hours: number;
   time: string;
-  wind_speed_mph: number;
-  rain_intensity_in_hr: number;
-  snow_intensity_in_hr: number;
+  wind_speed_mph: number | null;
+  rain_intensity_in_hr: number | null;
+  snow_intensity_in_hr: number | null;
+  forecast_available?: boolean;
 }
 
 export interface Checkpoint {
@@ -30,11 +31,11 @@ export interface Checkpoint {
   estimated_arrival_time: string;
   arrival_time_formatted: string;
   forecast_lookup_hour: string;
-  wind_speed_mph: number;
-  rain_intensity_in_hr: number;
-  snow_intensity_in_hr: number;
-  temperature_f?: number;
-  forecast_available?: boolean;
+  wind_speed_mph: number | null;
+  rain_intensity_in_hr: number | null;
+  snow_intensity_in_hr: number | null;
+  temperature_f?: number | null;
+  forecast_available: boolean;
   wind_risk: RiskLevel;
   rain_risk: RiskLevel;
   snow_risk: RiskLevel;
@@ -56,7 +57,7 @@ export interface RouteSegment {
   end_lon: number;
   distance_miles: number;
   risk_level: RiskLevel;
-  risk_score: number;
+  risk_score?: number;
 }
 
 export interface RouteMetrics {
@@ -65,6 +66,8 @@ export interface RouteMetrics {
   high_risk_miles: number;
   severe_risk_miles: number;
   no_travel_miles: number;
+  unknown_risk_miles: number;
+  has_missing_weather: boolean;
   average_risk_score: number;
   overall_route_risk: RiskLevel;
   is_safe_for_travel: boolean;
@@ -72,15 +75,30 @@ export interface RouteMetrics {
   segments: RouteSegment[];
 }
 
-export interface HeatmapPoint {
-  lat: number;
-  lon: number;
-  intensity: number;
-  wind_mph: number;
-  rain_in_hr: number;
-  snow_in_hr: number;
-  risk_level: RiskLevel;
-  reason?: string;
+export interface DynamicHourlyCheckpoint {
+  id: string;
+  checkpoint_index: number;
+  latitude: number;
+  longitude: number;
+  distance_from_origin_miles: number;
+  is_origin?: boolean;
+  is_destination?: boolean;
+  wind_speed_mph: number | null;
+  rain_intensity_in_hr: number | null;
+  snow_intensity_in_hr: number | null;
+  wind_risk: RiskLevel;
+  rain_risk: RiskLevel;
+  snow_risk: RiskLevel;
+  load_adjusted_risk: string;
+  final_risk: RiskLevel;
+  risk_score: number;
+  forecast_available: boolean;
+  reason: string;
+}
+
+export interface DynamicHourlyTimelineEntry {
+  checkpoints: DynamicHourlyCheckpoint[];
+  segments: RouteSegment[];
 }
 
 export interface RouteData {
@@ -95,9 +113,13 @@ export interface RouteData {
   origin_coords: [number, number];
   destination_coords: [number, number];
   provider: string;
+  is_simulated?: boolean;
+  is_verified_road_route?: boolean;
+  simulation_warning?: string;
+  has_missing_weather?: boolean;
   metrics: RouteMetrics;
   checkpoints: Checkpoint[];
-  heatmap_timeline?: Record<string | number, HeatmapPoint[]>;
+  heatmap_timeline?: Record<string | number, DynamicHourlyTimelineEntry>;
   is_recommended?: boolean;
   is_critically_unsafe?: boolean;
 }
@@ -109,6 +131,9 @@ export interface RouteRanking {
   severe_miles: number;
   high_miles: number;
   no_travel_miles: number;
+  unknown_risk_miles?: number;
+  has_missing_weather?: boolean;
+  is_simulated?: boolean;
   average_risk_score: number;
   duration_formatted: string;
 }
@@ -127,6 +152,7 @@ export interface AnalyzeRoutesResponse {
     origin: GeocodedLocation;
     destination: GeocodedLocation;
     departure_time: string;
+    departure_time_utc?: string;
     load_weight_lb: number;
     sampling_interval_miles: number;
   };
@@ -141,4 +167,6 @@ export interface AnalyzeRoutesRequest {
   departure_time: string;
   load_weight_lb: number;
   sampling_interval_miles: SamplingInterval;
+  timezone_offset_minutes?: number;
+  allow_simulated_fallback?: boolean;
 }

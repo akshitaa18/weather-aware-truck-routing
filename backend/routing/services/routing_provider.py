@@ -3,8 +3,8 @@ Routing Provider Abstraction and Implementations.
 
 Supports:
 1. OpenRouteService (HGV truck profile, 3 alternatives)
-2. OSRM with Smart Corridor Waypoint Routing (guaranteeing 3 distinct driving routes)
-3. Documented Fallback Corridor Provider for complete network resilience
+2. OSRM with Smart Corridor Waypoint Routing (guaranteeing distinct genuine driving routes)
+3. Clearly labeled Fallback Corridor Provider for offline demonstration purposes only
 """
 
 import os
@@ -99,7 +99,6 @@ class OpenRouteServiceProvider(RoutingProvider):
                     props = feat.get("properties", {})
                     summary = props.get("summary", {})
                     raw_coords = geom.get("coordinates", [])
-                    # Convert [lon, lat] to [lat, lon]
                     coords = [[round(c[1], 6), round(c[0], 6)] for c in raw_coords]
                     dist_meters = summary.get("distance", 0.0)
                     duration_secs = summary.get("duration", 0.0)
@@ -122,6 +121,8 @@ class OpenRouteServiceProvider(RoutingProvider):
                         "origin_coords": list(origin_coords),
                         "destination_coords": list(destination_coords),
                         "provider": "OpenRouteService (HGV)",
+                        "is_simulated": False,
+                        "is_verified_road_route": True,
                     })
                 return routes
         except Exception as e:
@@ -132,7 +133,7 @@ class OpenRouteServiceProvider(RoutingProvider):
 class OSRMProvider(RoutingProvider):
     """
     OSRM routing provider with Smart Corridor Waypoint Strategy.
-    Guarantees exactly 3 distinct, genuine driving routes across real highway networks.
+    Generates genuine driving routes across real highway networks.
     """
     BASE_URL = "https://router.project-osrm.org/route/v1/driving"
 
@@ -151,7 +152,7 @@ class OSRMProvider(RoutingProvider):
         # 1. First query OSRM with alternatives=true
         try:
             url = f"{self.BASE_URL}/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson&alternatives=true&steps=true"
-            resp = requests.get(url, timeout=6)
+            resp = requests.get(url, timeout=7)
             if resp.status_code == 200:
                 data = resp.json()
                 raw_routes = data.get("routes", [])
@@ -178,14 +179,15 @@ class OSRMProvider(RoutingProvider):
                         "origin_coords": list(origin_coords),
                         "destination_coords": list(destination_coords),
                         "provider": "OSRM Routing Engine",
+                        "is_simulated": False,
+                        "is_verified_road_route": True,
                     })
         except Exception as e:
             print(f"OSRM initial query error: {e}")
 
-        # If we have fewer than 3 routes, query intermediate corridor waypoints to generate genuine routes
+        # If we have fewer than 3 routes, query intermediate corridor waypoints through OSRM
         if len(routes) < 3:
             needed = 3 - len(routes)
-            # Calculate perpendicular offsets from midpoint
             mid_lat = (lat1 + lat2) / 2.0
             mid_lon = (lon1 + lon2) / 2.0
             
@@ -193,11 +195,9 @@ class OSRMProvider(RoutingProvider):
             d_lon = lon2 - lon1
             length = math.sqrt(d_lat * d_lat + d_lon * d_lon) or 1.0
             
-            # Perpendicular unit vector (-d_lon, d_lat)
             perp_lat = -d_lon / length
             perp_lon = d_lat / length
             
-            # Offsets: +0.75 deg and -0.75 deg (~50 miles offset)
             offset_multipliers = [0.85, -0.85] if needed == 2 else [0.85]
             
             for m in offset_multipliers:
@@ -208,7 +208,7 @@ class OSRMProvider(RoutingProvider):
                 
                 try:
                     via_url = f"{self.BASE_URL}/{lon1},{lat1};{via_lon},{via_lat};{lon2},{lat2}?overview=full&geometries=geojson&steps=true"
-                    via_resp = requests.get(via_url, timeout=6)
+                    via_resp = requests.get(via_url, timeout=7)
                     if via_resp.status_code == 200:
                         via_data = via_resp.json()
                         v_routes = via_data.get("routes", [])
@@ -237,6 +237,8 @@ class OSRMProvider(RoutingProvider):
                                 "origin_coords": list(origin_coords),
                                 "destination_coords": list(destination_coords),
                                 "provider": f"OSRM ({corridor_tag})",
+                                "is_simulated": False,
+                                "is_verified_road_route": True,
                             })
                 except Exception as ex:
                     print(f"OSRM waypoint route error: {ex}")
@@ -246,9 +248,11 @@ class OSRMProvider(RoutingProvider):
 
 class FallbackCorridorProvider(RoutingProvider):
     """
-    Documented Fallback Corridor Provider for complete network resilience.
-    Generates three distinct, realistic highway corridors based on geocoded points
-    with authentic curvature, highway speeds (55-65 mph), and route geometry.
+    Simulated Demonstration Fallback Provider.
+    
+    IMPORTANT: Generates mathematical curved paths between points rather than actual road routes.
+    Explicitly labeled as simulated and NEVER presented as verified highway routes.
+    Used ONLY when actual routing services are unreachable or specifically in offline demo mode.
     """
     def get_three_routes(
         self,
@@ -260,15 +264,13 @@ class FallbackCorridorProvider(RoutingProvider):
         lat1, lon1 = origin_coords
         lat2, lon2 = destination_coords
 
-        # Approximate direct distance in miles
         from .checkpoint_generator import haversine_distance_miles
         direct_dist = haversine_distance_miles(lat1, lon1, lat2, lon2)
 
-        # 3 corridors: Direct Highway, Northern Arc, Southern Arc
         corridor_configs = [
-            {"id": "route_1", "name": "Primary Interstate Corridor", "curve_factor": 0.0, "dist_mult": 1.15, "speed_mph": 58.0},
-            {"id": "route_2", "name": "Northern Highway Corridor", "curve_factor": 0.12, "dist_mult": 1.24, "speed_mph": 55.0},
-            {"id": "route_3", "name": "Southern Turnpike Corridor", "curve_factor": -0.12, "dist_mult": 1.28, "speed_mph": 54.0},
+            {"id": "route_1", "name": "Primary Corridor", "curve_factor": 0.0, "dist_mult": 1.15, "speed_mph": 58.0},
+            {"id": "route_2", "name": "Northern Corridor", "curve_factor": 0.12, "dist_mult": 1.24, "speed_mph": 55.0},
+            {"id": "route_3", "name": "Southern Corridor", "curve_factor": -0.12, "dist_mult": 1.28, "speed_mph": 54.0},
         ]
 
         routes = []
@@ -285,9 +287,7 @@ class FallbackCorridorProvider(RoutingProvider):
             
             for step in range(num_points + 1):
                 t = step / float(num_points)
-                # Quadratic Bezier displacement
                 displacement = math.sin(t * math.pi) * c_factor * length
-                # Slight micro-variations for road simulation
                 jitter = math.sin(t * 8 * math.pi) * 0.005
                 pt_lat = lat1 + t * d_lat + (displacement + jitter) * perp_lat
                 pt_lon = lon1 + t * d_lon + (displacement + jitter) * perp_lon
@@ -299,7 +299,7 @@ class FallbackCorridorProvider(RoutingProvider):
 
             routes.append({
                 "id": conf["id"],
-                "name": conf["name"],
+                "name": f"[Simulated] {conf['name']}",
                 "distance_miles": total_dist_miles,
                 "duration_seconds": duration_secs,
                 "duration_formatted": format_duration(duration_secs),
@@ -308,7 +308,13 @@ class FallbackCorridorProvider(RoutingProvider):
                 "destination_name": destination_name,
                 "origin_coords": list(origin_coords),
                 "destination_coords": list(destination_coords),
-                "provider": "Highway Corridor Fallback Engine",
+                "provider": "Simulated Geometry Engine (Unverified)",
+                "is_simulated": True,
+                "is_verified_road_route": False,
+                "simulation_warning": (
+                    "SIMULATED ROUTE: Path was generated via mathematical interpolation. "
+                    "It is NOT a verified road route and must not be used for actual navigation."
+                ),
             })
 
         return routes
@@ -316,8 +322,9 @@ class FallbackCorridorProvider(RoutingProvider):
 
 class MultiSourceRoutingManager:
     """
-    Coordinates primary (OpenRouteService), secondary (OSRM with smart corridor routing),
-    and documented fallback routing providers.
+    Coordinates primary (OpenRouteService) and secondary (OSRM with smart corridor routing).
+    Prefers returning genuine road routes or raising a clear error if actual road routing fails.
+    Simulated fallback is only used when allow_simulated_fallback=True or as a clearly labeled last resort.
     """
     def __init__(self):
         self.ors_provider = OpenRouteServiceProvider()
@@ -329,7 +336,8 @@ class MultiSourceRoutingManager:
         origin_coords: Tuple[float, float],
         destination_coords: Tuple[float, float],
         origin_name: str,
-        destination_name: str
+        destination_name: str,
+        allow_simulated_fallback: bool = False
     ) -> List[Dict[str, Any]]:
         # 1. Try OpenRouteService if API key configured
         ors_routes = self.ors_provider.get_three_routes(
@@ -345,15 +353,22 @@ class MultiSourceRoutingManager:
         if len(osrm_routes) >= 3:
             return osrm_routes[:3]
 
-        # Combine if partial
+        # Combine any genuine routes returned
         combined = ors_routes + osrm_routes
-        if len(combined) >= 3:
+        if combined:
             return combined[:3]
 
-        # 3. Use documented Fallback Corridor Provider
-        print("Routing providers returned < 3 routes. Engaging Fallback Corridor Provider.")
-        return self.fallback_provider.get_three_routes(
-            origin_coords, destination_coords, origin_name, destination_name
+        # 3. If real routing failed completely:
+        if allow_simulated_fallback:
+            print("Routing service unavailable. Returning explicitly labeled simulated corridors for demonstration.")
+            return self.fallback_provider.get_three_routes(
+                origin_coords, destination_coords, origin_name, destination_name
+            )
+        
+        # Prefer raising a clear, informative error
+        raise ValueError(
+            "Routing provider unavailable: Unable to compute verified highway routes between the specified locations. "
+            "Please check network connectivity or try again in a few moments."
         )
 
 

@@ -10,7 +10,7 @@ import {
 import L from 'leaflet';
 import type { RouteData, Checkpoint } from '../../types';
 import { getRouteColor, RISK_COLORS } from '../../utils/colors';
-import { Wind, CloudRain, Snowflake, Layers } from 'lucide-react';
+import { Wind, CloudRain, Snowflake, Layers, AlertTriangle } from 'lucide-react';
 
 interface RouteMapProps {
   routes: RouteData[];
@@ -95,21 +95,45 @@ export const RouteMap: React.FC<RouteMapProps> = ({
   }
 
   const getCheckpointDynamicWeather = (cp: Checkpoint) => {
-    if (forecastOffsetHours === 0 || !cp.hourly_timeline || cp.hourly_timeline.length === 0) {
-      return {
-        wind: cp.wind_speed_mph,
-        rain: cp.rain_intensity_in_hr,
-        snow: cp.snow_intensity_in_hr,
-        risk: cp.final_risk,
-      };
+    // Check if dynamic timeline exists for the active route at forecastOffsetHours
+    const timelineEntry =
+      activeRoute.heatmap_timeline?.[forecastOffsetHours] ||
+      activeRoute.heatmap_timeline?.[String(forecastOffsetHours)];
+
+    if (timelineEntry && timelineEntry.checkpoints) {
+      const dynCp = timelineEntry.checkpoints.find(
+        (d) => d.id === cp.id || d.checkpoint_index === cp.checkpoint_index
+      );
+      if (dynCp) {
+        return {
+          wind: dynCp.wind_speed_mph,
+          rain: dynCp.rain_intensity_in_hr,
+          snow: dynCp.snow_intensity_in_hr,
+          risk: dynCp.final_risk,
+          wind_risk: dynCp.wind_risk,
+          rain_risk: dynCp.rain_risk,
+          snow_risk: dynCp.snow_risk,
+          load_adjusted_risk: dynCp.load_adjusted_risk,
+          forecast_available: dynCp.forecast_available,
+          reason: dynCp.reason,
+          is_dynamic: true,
+        };
+      }
     }
-    const offsetIdx = Math.min(forecastOffsetHours, cp.hourly_timeline.length - 1);
-    const entry = cp.hourly_timeline[offsetIdx];
+
+    // Fallback to static checkpoint ETA values
     return {
-      wind: entry.wind_speed_mph,
-      rain: entry.rain_intensity_in_hr,
-      snow: entry.snow_intensity_in_hr,
+      wind: cp.wind_speed_mph,
+      rain: cp.rain_intensity_in_hr,
+      snow: cp.snow_intensity_in_hr,
       risk: cp.final_risk,
+      wind_risk: cp.wind_risk,
+      rain_risk: cp.rain_risk,
+      snow_risk: cp.snow_risk,
+      load_adjusted_risk: cp.load_adjusted_risk,
+      forecast_available: cp.forecast_available ?? true,
+      reason: cp.risk_reason,
+      is_dynamic: false,
     };
   };
 
@@ -158,6 +182,17 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           Risk Corridor Heatmap ({showHeatSegments ? 'ON' : 'OFF'})
         </button>
       </div>
+
+      {/* Simulated Route Warning Banner */}
+      {activeRoute.is_simulated && (
+        <div className="absolute top-14 left-3 right-3 sm:right-auto z-[1000] bg-amber-50 border border-amber-300 text-amber-950 px-3 py-1.5 rounded-xl shadow-md flex items-center gap-2 text-xs font-bold max-w-lg">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+          <span>
+            {activeRoute.simulation_warning ||
+              'Simulated Geometry (Unverified): Real road routing failed; corridor shown is a mathematical curve, not a verified road route.'}
+          </span>
+        </div>
+      )}
 
       {/* Route Quick Switcher Pills Floating at Top Right */}
       <div className="absolute top-3 right-3 z-[1000] hidden sm:flex items-center gap-1.5 bg-white/95 backdrop-blur-md p-1.5 rounded-xl border border-slate-200 shadow-md text-xs">
@@ -230,14 +265,26 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           );
         })}
 
-        {/* 2. Weather Heatmap / Risk Segments along active route */}
-        {showHeatSegments &&
-          activeRoute.metrics.segments &&
-          activeRoute.metrics.segments.map((seg, sIdx) => {
-            const riskConfig = RISK_COLORS[seg.risk_level] || RISK_COLORS.Low;
+        {/* 2. Weather Heatmap / Risk Segments along active route (Dynamic by hour offset) */}
+        {showHeatSegments && (() => {
+          const timelineEntry =
+            activeRoute.heatmap_timeline?.[forecastOffsetHours] ||
+            activeRoute.heatmap_timeline?.[String(forecastOffsetHours)];
+          const segmentsToRender =
+            timelineEntry && timelineEntry.segments && timelineEntry.segments.length > 0
+              ? timelineEntry.segments
+              : activeRoute.metrics.segments;
+
+          if (!segmentsToRender) return null;
+
+          return segmentsToRender.map((seg, sIdx) => {
+            const riskConfig =
+              RISK_COLORS[seg.risk_level] ||
+              RISK_COLORS['Data Unavailable'] ||
+              RISK_COLORS.Low;
             return (
               <Polyline
-                key={`heat_seg_${sIdx}`}
+                key={`heat_seg_${forecastOffsetHours}_${sIdx}`}
                 positions={[
                   [seg.start_lat, seg.start_lon],
                   [seg.end_lat, seg.end_lon],
@@ -250,7 +297,8 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                 }}
               />
             );
-          })}
+          });
+        })()}
 
         {/* 3. Terminal Markers (Origin & Destination) */}
         {activeRoute.coordinates.length > 0 && (
@@ -287,17 +335,20 @@ export const RouteMap: React.FC<RouteMapProps> = ({
           </>
         )}
 
-        {/* 4. Checkpoints along Active Route */}
+        {/* 4. Checkpoints along Active Route (Dynamic by hour offset) */}
         {showCheckpoints &&
           activeRoute.checkpoints &&
           activeRoute.checkpoints.map((cp) => {
             const dynamic = getCheckpointDynamicWeather(cp);
-            const riskConfig = RISK_COLORS[dynamic.risk] || RISK_COLORS.Low;
+            const riskConfig =
+              RISK_COLORS[dynamic.risk] ||
+              RISK_COLORS['Data Unavailable'] ||
+              RISK_COLORS.Low;
             const isHazard = dynamic.risk === 'Severe' || dynamic.risk === 'No Travel';
 
             return (
               <Marker
-                key={cp.id}
+                key={`${cp.id}_${forecastOffsetHours}`}
                 position={[cp.latitude, cp.longitude]}
                 icon={createCustomIcon(riskConfig.hex, isHazard)}
               >
@@ -318,52 +369,73 @@ export const RouteMap: React.FC<RouteMapProps> = ({
                       </span>
                     </div>
 
-                    {/* ETA */}
+                    {/* ETA or Dynamic Timestamp */}
                     <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                      <span className="text-[10px] text-slate-400 font-medium block">ESTIMATED ARRIVAL (ETA)</span>
-                      <span className="font-bold text-slate-800">{cp.arrival_time_formatted || cp.estimated_arrival_time}</span>
+                      <span className="text-[10px] text-slate-400 font-medium block">
+                        {forecastOffsetHours > 0 ? `DEPARTURE + ${forecastOffsetHours}H INSTANT` : 'ESTIMATED ARRIVAL (ETA)'}
+                      </span>
+                      <span className="font-bold text-slate-800">
+                        {forecastOffsetHours > 0
+                          ? `T+${forecastOffsetHours}h Forecast`
+                          : (cp.arrival_time_formatted || cp.estimated_arrival_time)}
+                      </span>
                     </div>
 
                     {/* Weather Measurements */}
-                    <div className="grid grid-cols-3 gap-1.5 text-center">
-                      <div className="bg-slate-50 p-1 rounded-md border border-slate-100">
-                        <div className="text-[9px] text-slate-400 font-semibold flex items-center justify-center gap-0.5">
-                          <Wind className="h-2.5 w-2.5" />
-                          <span>WIND</span>
+                    {dynamic.forecast_available === false ? (
+                      <div className="p-2 bg-slate-100 border border-slate-200 rounded-lg text-center text-slate-700">
+                        <div className="font-bold text-[11px] text-slate-800">Forecast Unavailable</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">
+                          {dynamic.reason || 'Weather forecast outside provider model horizon or data missing.'}
                         </div>
-                        <div className="font-bold text-slate-800 mt-0.5">{dynamic.wind} mph</div>
-                        <div className="text-[9px] text-slate-500">{cp.wind_risk}</div>
                       </div>
-
-                      <div className="bg-slate-50 p-1 rounded-md border border-slate-100">
-                        <div className="text-[9px] text-slate-400 font-semibold flex items-center justify-center gap-0.5">
-                          <CloudRain className="h-2.5 w-2.5" />
-                          <span>RAIN</span>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-1.5 text-center">
+                        <div className="bg-slate-50 p-1 rounded-md border border-slate-100">
+                          <div className="text-[9px] text-slate-400 font-semibold flex items-center justify-center gap-0.5">
+                            <Wind className="h-2.5 w-2.5" />
+                            <span>WIND</span>
+                          </div>
+                          <div className="font-bold text-slate-800 mt-0.5">
+                            {dynamic.wind !== null ? `${dynamic.wind} mph` : 'N/A'}
+                          </div>
+                          <div className="text-[9px] text-slate-500">{dynamic.wind_risk}</div>
                         </div>
-                        <div className="font-bold text-slate-800 mt-0.5">{dynamic.rain} in/h</div>
-                        <div className="text-[9px] text-slate-500">{cp.rain_risk}</div>
-                      </div>
 
-                      <div className="bg-slate-50 p-1 rounded-md border border-slate-100">
-                        <div className="text-[9px] text-slate-400 font-semibold flex items-center justify-center gap-0.5">
-                          <Snowflake className="h-2.5 w-2.5" />
-                          <span>SNOW</span>
+                        <div className="bg-slate-50 p-1 rounded-md border border-slate-100">
+                          <div className="text-[9px] text-slate-400 font-semibold flex items-center justify-center gap-0.5">
+                            <CloudRain className="h-2.5 w-2.5" />
+                            <span>RAIN</span>
+                          </div>
+                          <div className="font-bold text-slate-800 mt-0.5">
+                            {dynamic.rain !== null ? `${dynamic.rain} in/h` : 'N/A'}
+                          </div>
+                          <div className="text-[9px] text-slate-500">{dynamic.rain_risk}</div>
                         </div>
-                        <div className="font-bold text-slate-800 mt-0.5">{dynamic.snow} in/h</div>
-                        <div className="text-[9px] text-slate-500">{cp.snow_risk}</div>
-                      </div>
-                    </div>
 
-                    {/* Load Rule & Reason */}
-                    {cp.load_adjusted_risk !== 'None' && (
-                      <div className="text-[10px] p-1.5 rounded bg-amber-50 text-amber-900 border border-amber-200">
-                        <span className="font-bold">Load Rule Active:</span> Elevated to {cp.load_adjusted_risk}
+                        <div className="bg-slate-50 p-1 rounded-md border border-slate-100">
+                          <div className="text-[9px] text-slate-400 font-semibold flex items-center justify-center gap-0.5">
+                            <Snowflake className="h-2.5 w-2.5" />
+                            <span>SNOW</span>
+                          </div>
+                          <div className="font-bold text-slate-800 mt-0.5">
+                            {dynamic.snow !== null ? `${dynamic.snow} in/h` : 'N/A'}
+                          </div>
+                          <div className="text-[9px] text-slate-500">{dynamic.snow_risk}</div>
+                        </div>
                       </div>
                     )}
 
-                    {cp.risk_reason && (
+                    {/* Load Rule & Reason */}
+                    {dynamic.load_adjusted_risk && dynamic.load_adjusted_risk !== 'None' && (
+                      <div className="text-[10px] p-1.5 rounded bg-amber-50 text-amber-900 border border-amber-200">
+                        <span className="font-bold">Load Rule Active:</span> Elevated to {dynamic.load_adjusted_risk}
+                      </div>
+                    )}
+
+                    {dynamic.reason && dynamic.forecast_available !== false && (
                       <div className="text-[10px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 italic">
-                        {cp.risk_reason}
+                        {dynamic.reason}
                       </div>
                     )}
                   </div>

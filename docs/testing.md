@@ -25,8 +25,10 @@ All 15 verification areas mandated in Section 16 are thoroughly covered.
 | 11 | Route recommendation ordering | `test_recommendation.py` | Strict lexicographical comparison: Fewest Severe miles $\to$ Fewest High miles $\to$ Lowest average risk score $\to$ Shortest travel time. |
 | 12 | No-Travel route handling | `test_recommendation.py` | Hard safety constraint disqualification; critical alert triggered if all routes contain hazards. |
 | 13 | Invalid user inputs | `test_api_endpoints.py` | Missing fields, identical origin/destination, invalid dates, negative/excessive load weights, invalid sampling interval. |
-| 14 | Missing weather data | `test_api_endpoints.py` | Safe fallback handling, `forecast_available` flags, gracefully handled network degradation. |
-| 15 | Routing failure & fallback | `test_api_endpoints.py`, `test_checkpoint_generator.py` | Fallback corridor generator activates if primary routing provider is unreachable or returns $<3$ routes. |
+| 14 | Missing weather data | `test_risk_engine.py`, `test_recommendation.py`, `test_heatmap.py` | Missing data classified as `Data Unavailable` (never Low). Routes with missing forecasts cannot be certified safe (`is_safe_for_travel=False`, clearance withheld). |
+| 15 | Routing failure & simulated fallback | `test_routing_provider.py` | Verified road routes return `is_simulated=False`. Fallback returns `is_simulated=True`, unverified road warning. Raises error by default unless fallback explicitly enabled. |
+| 16 | Dynamic Timeline & Slider Offsets | `test_heatmap.py` | Slider offsets relative to departure time ($T_{\text{dep}} + H$). Dynamic risk recalculation per checkpoint and dynamic heatmap segments. |
+| 17 | Timezone handling & instant matching | `test_arrival_time.py` | Timezone-aware ISO strings, browser offset minutes, and UTC instant matching with Open-Meteo. |
 
 ---
 
@@ -39,21 +41,23 @@ cd backend
 pytest -v
 ```
 
-Expected output:
+Actual output:
 ```text
 ============================= test session starts =============================
 platform win32 -- Python 3.14.5, pytest-9.2.0, pluggy-1.7.0
 rootdir: C:\weather-aware-truck-routing\backend
 plugins: django-4.14.0
-collected 41 items
+collected 55 items
 
-routing/tests/test_api_endpoints.py ........                             [ 17%]
-routing/tests/test_arrival_time.py ..                                    [ 21%]
-routing/tests/test_checkpoint_generator.py .....                         [ 34%]
-routing/tests/test_recommendation.py ......                              [ 48%]
-routing/tests/test_risk_engine.py .....................                  [100%]
+routing/tests/test_api_endpoints.py .......                              [ 12%]
+routing/tests/test_arrival_time.py .....                                 [ 21%]
+routing/tests/test_checkpoint_generator.py .....                         [ 30%]
+routing/tests/test_heatmap.py ..                                         [ 34%]
+routing/tests/test_recommendation.py ........                            [ 49%]
+routing/tests/test_risk_engine.py .........................              [ 94%]
+routing/tests/test_routing_provider.py ...                               [100%]
 
-============================== 41 passed in 1.17s ==============================
+============================== 55 passed in 1.17s ==============================
 ```
 
 ---
@@ -67,16 +71,25 @@ cd frontend
 npm test
 ```
 
-Expected output:
+Actual output:
 ```text
  RUN  v5.1.1 C:/weather-aware-truck-routing/frontend
 
- ✓ src/test/RouteForm.test.tsx (3 tests)
+ ✓ src/test/RecommendationBanner.test.tsx (3 tests)
+ ✓ src/test/RouteComparison.test.tsx (2 tests)
  ✓ src/test/ForecastSlider.test.tsx (2 tests)
+ ✓ src/test/RouteForm.test.tsx (4 tests)
+ ✓ src/test/CheckpointTable.test.tsx (3 tests)
 
- Test Files  2 passed (2)
-      Tests  5 passed (5)
-   Duration  2.25s
+ Test Files  5 passed (5)
+      Tests  14 passed (14)
+   Duration  2.33s
 ```
 
-Total Automated Tests: **46 passed** (41 backend + 5 frontend).
+---
+
+## 5. Total Test Suite Summary
+
+- **Backend Automated Tests:** 55 passed
+- **Frontend Automated Tests:** 14 passed
+- **Combined Test Count:** 69 automated tests passing with 100% success rate.

@@ -71,6 +71,7 @@ export const RouteForm: React.FC<RouteFormProps> = ({ onSubmit, isLoading }) => 
       departure_time: departureTime,
       load_weight_lb: Number(loadWeight),
       sampling_interval_miles: samplingInterval,
+      timezone_offset_minutes: new Date().getTimezoneOffset(),
     });
   };
 

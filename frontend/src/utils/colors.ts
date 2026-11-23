@@ -36,6 +36,13 @@ export const RISK_COLORS: Record<RiskLevel, { bg: string; text: string; border: 
     hex: '#881337',
     badge: 'bg-rose-900 text-white border-rose-950 font-bold',
   },
+  'Data Unavailable': {
+    bg: 'bg-slate-100',
+    text: 'text-slate-700',
+    border: 'border-slate-300',
+    hex: '#64748b',
+    badge: 'bg-slate-200 text-slate-800 border-slate-400',
+  },
 };
 
 export const ROUTE_PALETTE = [

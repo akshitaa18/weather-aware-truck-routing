@@ -16,6 +16,7 @@ export const RiskDistributionChart: React.FC<RiskDistributionChartProps> = ({ ro
     'High Risk (mi)': r.metrics.high_risk_miles,
     'Severe Risk (mi)': r.metrics.severe_risk_miles,
     'No Travel (mi)': r.metrics.no_travel_miles,
+    'Data Unavailable (mi)': r.metrics.unknown_risk_miles || 0,
   }));
 
   return (
@@ -52,6 +53,7 @@ export const RiskDistributionChart: React.FC<RiskDistributionChartProps> = ({ ro
             <Bar dataKey="High Risk (mi)" stackId="a" fill="#f97316" />
             <Bar dataKey="Severe Risk (mi)" stackId="a" fill="#ef4444" />
             <Bar dataKey="No Travel (mi)" stackId="a" fill="#881337" />
+            <Bar dataKey="Data Unavailable (mi)" stackId="a" fill="#64748b" />
           </BarChart>
         </ResponsiveContainer>
       </div>

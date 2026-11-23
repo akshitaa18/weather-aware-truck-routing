@@ -23,7 +23,9 @@ Initiates end-to-end geocoding, multi-alternative routing, checkpoint generation
   "destination": "Detroit, MI",
   "departure_time": "2026-11-24T08:00",
   "load_weight_lb": 42000.0,
-  "sampling_interval_miles": 25
+  "sampling_interval_miles": 25,
+  "timezone_offset_minutes": 300,
+  "allow_simulated_fallback": false
 }
 ```
 
@@ -32,9 +34,11 @@ Initiates end-to-end geocoding, multi-alternative routing, checkpoint generation
 |---|---|---|---|
 | `origin` | String | Origin location | Required, non-empty, distinct from destination |
 | `destination` | String | Destination location | Required, non-empty, distinct from origin |
-| `departure_time` | String | Planned departure timestamp | Required, ISO 8601 (`YYYY-MM-DDTHH:MM`) |
+| `departure_time` | String | Planned departure timestamp | Required, ISO 8601 (`YYYY-MM-DDTHH:MM` or with offset) |
 | `load_weight_lb` | Float | Vehicle gross cargo load weight in pounds | Required, `0.0 <= load <= 120,000.0` |
 | `sampling_interval_miles` | Integer | Distance interval between weather samples | Required, choice: `10`, `25`, or `50` |
+| `timezone_offset_minutes` | Integer | Client browser offset from UTC (minutes) | Optional, defaults to UTC |
+| `allow_simulated_fallback` | Boolean | Enable synthetic geometry fallback if road routing fails | Optional, defaults to `false` |
 
 #### Success Response (`200 OK`)
 ```json

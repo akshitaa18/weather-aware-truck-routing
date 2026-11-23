@@ -21,7 +21,7 @@ class AnalyzeRouteRequestSerializer(serializers.Serializer):
     )
     departure_time = serializers.CharField(
         required=True,
-        help_text="Departure timestamp in ISO 8601 format, e.g. '2026-11-24T08:00'"
+        help_text="Departure timestamp in ISO 8601 format, e.g. '2026-11-24T08:00' or '2026-11-24T08:00:00-05:00'"
     )
     load_weight_lb = serializers.FloatField(
         required=True,
@@ -34,15 +34,26 @@ class AnalyzeRouteRequestSerializer(serializers.Serializer):
         default=25,
         help_text="Weather sampling interval along route: 10, 25, or 50 miles"
     )
+    timezone_offset_minutes = serializers.IntegerField(
+        required=False,
+        default=None,
+        allow_null=True,
+        help_text="Client timezone offset from UTC in minutes (from Date.getTimezoneOffset())"
+    )
+    allow_simulated_fallback = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Allow explicitly labeled simulated routes if external road routing is down"
+    )
 
     def validate_departure_time(self, value):
+        clean = value.strip().replace("Z", "+00:00")
         try:
-            clean = value.replace("Z", "+00:00")
-            dt = datetime.fromisoformat(clean)
+            datetime.fromisoformat(clean)
             return value
         except Exception:
             raise serializers.ValidationError(
-                "Invalid departure date/time format. Use ISO 8601 (e.g., YYYY-MM-DDTHH:MM)."
+                "Invalid departure date/time format. Use ISO 8601 (e.g., YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SSZ)."
             )
 
     def validate(self, data):

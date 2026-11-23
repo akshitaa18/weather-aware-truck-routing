@@ -4,11 +4,11 @@ Weather Provider Service.
 Fetches accurate hourly weather forecasts using Open-Meteo API.
 Batches coordinate requests, caches results, normalizes units (mph, in/hr),
 and attaches hourly weather predictions matching checkpoint ETAs.
+Preserves forecast availability flags and never converts missing forecasts into zero-valued Low risk.
 """
 
-import math
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 
 # In-memory weather cache: (rounded_lat, rounded_lon) -> hourly_forecast_dict
@@ -23,7 +23,9 @@ def cache_key(lat: float, lon: float) -> str:
 class WeatherProvider:
     """Interface for weather data providers."""
     def fetch_weather_for_checkpoints(
-        self, checkpoints: List[Dict[str, Any]]
+        self,
+        checkpoints: List[Dict[str, Any]],
+        departure_time_utc_iso: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         raise NotImplementedError
 
@@ -36,7 +38,9 @@ class OpenMeteoWeatherProvider(WeatherProvider):
     BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
     def fetch_weather_for_checkpoints(
-        self, checkpoints: List[Dict[str, Any]]
+        self,
+        checkpoints: List[Dict[str, Any]],
+        departure_time_utc_iso: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         if not checkpoints:
             return checkpoints
@@ -54,17 +58,26 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             chunk = needed_coords[i : i + chunk_size]
             self._fetch_batch(chunk)
 
+        # Base departure time for 0-48h timeline calculation
+        if departure_time_utc_iso:
+            try:
+                base_dep_dt = datetime.fromisoformat(departure_time_utc_iso.replace("Z", "+00:00"))
+            except Exception:
+                base_dep_dt = datetime.now(timezone.utc)
+        else:
+            base_dep_dt = datetime.now(timezone.utc)
+
         # Now attach weather to each checkpoint
         for cp in checkpoints:
             ck = cache_key(cp["latitude"], cp["longitude"])
             forecast_data = _WEATHER_CACHE.get(ck)
             
             if not forecast_data:
-                # Fallback if network or data missing
-                cp["wind_speed_mph"] = 0.0
-                cp["rain_intensity_in_hr"] = 0.0
-                cp["snow_intensity_in_hr"] = 0.0
-                cp["temperature_f"] = 65.0
+                # Do NOT substitute 0.0! Mark as unavailable
+                cp["wind_speed_mph"] = None
+                cp["rain_intensity_in_hr"] = None
+                cp["snow_intensity_in_hr"] = None
+                cp["temperature_f"] = None
                 cp["forecast_available"] = False
                 cp["hourly_timeline"] = []
                 continue
@@ -75,46 +88,74 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             snows = forecast_data.get("snowfall", [])
             temps = forecast_data.get("temperature_2m", [])
 
-            # Match checkpoint ETA hour
+            # Match checkpoint ETA hour (in UTC)
             target_hour = cp.get("forecast_lookup_hour")
             matched_idx = -1
             
             if target_hour and target_hour in times:
                 matched_idx = times.index(target_hour)
-            else:
-                # Find closest available hour
-                matched_idx = self._find_closest_time_index(times, target_hour)
 
-            if matched_idx >= 0 and matched_idx < len(winds):
-                cp["wind_speed_mph"] = round(float(winds[matched_idx] or 0.0), 1)
-                cp["rain_intensity_in_hr"] = round(float(precips[matched_idx] or 0.0), 2)
-                cp["snow_intensity_in_hr"] = round(float(snows[matched_idx] or 0.0), 2)
+            # Check if target hour is genuinely available
+            if matched_idx >= 0 and matched_idx < len(winds) and winds[matched_idx] is not None:
+                cp["wind_speed_mph"] = round(float(winds[matched_idx]), 1)
+                cp["rain_intensity_in_hr"] = round(float(precips[matched_idx] if precips[matched_idx] is not None else 0.0), 2)
+                cp["snow_intensity_in_hr"] = round(float(snows[matched_idx] if snows[matched_idx] is not None else 0.0), 2)
                 
-                # Temperature in Celsius -> Fahrenheit
-                raw_temp = float(temps[matched_idx] or 15.0)
+                raw_temp = float(temps[matched_idx]) if temps[matched_idx] is not None else 15.0
                 cp["temperature_f"] = round(raw_temp * 9.0 / 5.0 + 32.0, 1)
                 cp["forecast_available"] = True
-                
-                # Build 48-hour timeline starting from matched_idx or index 0 for the slider
-                timeline = []
-                for offset in range(0, 49):
-                    t_idx = matched_idx + offset
-                    if t_idx < len(times):
+            else:
+                # Out of forecast range or missing: NEVER classify as 0.0 Low risk
+                cp["wind_speed_mph"] = None
+                cp["rain_intensity_in_hr"] = None
+                cp["snow_intensity_in_hr"] = None
+                cp["temperature_f"] = None
+                cp["forecast_available"] = False
+
+            # Build 0-48 hour timeline strictly relative to DEPARTURE TIME
+            # (departure_time + offset_hours, NOT ETA + offset_hours)
+            timeline = []
+            for offset in range(0, 49):
+                target_dt = base_dep_dt + timedelta(hours=offset)
+                target_str = target_dt.strftime("%Y-%m-%dT%H:00")
+
+                if target_str in times:
+                    t_idx = times.index(target_str)
+                    w_val = winds[t_idx] if t_idx < len(winds) else None
+                    r_val = precips[t_idx] if t_idx < len(precips) else None
+                    s_val = snows[t_idx] if t_idx < len(snows) else None
+
+                    if w_val is not None:
                         timeline.append({
                             "offset_hours": offset,
-                            "time": times[t_idx],
-                            "wind_speed_mph": round(float(winds[t_idx] or 0.0), 1),
-                            "rain_intensity_in_hr": round(float(precips[t_idx] or 0.0), 2),
-                            "snow_intensity_in_hr": round(float(snows[t_idx] or 0.0), 2),
+                            "time": target_str,
+                            "wind_speed_mph": round(float(w_val), 1),
+                            "rain_intensity_in_hr": round(float(r_val or 0.0), 2),
+                            "snow_intensity_in_hr": round(float(s_val or 0.0), 2),
+                            "forecast_available": True,
                         })
-                cp["hourly_timeline"] = timeline
-            else:
-                cp["wind_speed_mph"] = 0.0
-                cp["rain_intensity_in_hr"] = 0.0
-                cp["snow_intensity_in_hr"] = 0.0
-                cp["temperature_f"] = 65.0
-                cp["forecast_available"] = False
-                cp["hourly_timeline"] = []
+                    else:
+                        # Missing data: do not repeat last forecast!
+                        timeline.append({
+                            "offset_hours": offset,
+                            "time": target_str,
+                            "wind_speed_mph": None,
+                            "rain_intensity_in_hr": None,
+                            "snow_intensity_in_hr": None,
+                            "forecast_available": False,
+                        })
+                else:
+                    # Outside provider horizon: do not repeat last forecast!
+                    timeline.append({
+                        "offset_hours": offset,
+                        "time": target_str,
+                        "wind_speed_mph": None,
+                        "rain_intensity_in_hr": None,
+                        "snow_intensity_in_hr": None,
+                        "forecast_available": False,
+                    })
+
+            cp["hourly_timeline"] = timeline
 
         return checkpoints
 
@@ -139,7 +180,6 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             resp = requests.get(self.BASE_URL, params=params, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
-                # If single location returned as object vs list of objects
                 if isinstance(data, dict):
                     results = [data]
                 else:
@@ -152,27 +192,7 @@ class OpenMeteoWeatherProvider(WeatherProvider):
                         hourly = res.get("hourly", {})
                         _WEATHER_CACHE[ck] = hourly
         except Exception as e:
-            # Silently log error, fallback handled by caller
             print(f"Weather API error: {e}")
-
-    def _find_closest_time_index(self, times: List[str], target_iso: Optional[str]) -> int:
-        if not times:
-            return -1
-        if not target_iso:
-            return 0
-        try:
-            target_dt = datetime.fromisoformat(target_iso)
-            best_idx = 0
-            best_diff = float("inf")
-            for idx, t_str in enumerate(times):
-                t_dt = datetime.fromisoformat(t_str)
-                diff = abs((t_dt - target_dt).total_seconds())
-                if diff < best_diff:
-                    best_diff = diff
-                    best_idx = idx
-            return best_idx
-        except Exception:
-            return 0
 
 
 # Default provider instance

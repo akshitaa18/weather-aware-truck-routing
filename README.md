@@ -27,17 +27,18 @@ This platform bridges that gap by integrating **ETA-synchronized hourly forecast
 
 ## 3. Core Features
 
-- **Three Genuine Alternative Driving Routes:** Guaranteed three distinct driving corridors computed over real highway networks via OSRM Smart Corridor routing or OpenRouteService.
+- **Three Genuine Alternative Driving Routes:** Guaranteed three distinct driving corridors computed over real highway networks via OSRM Smart Corridor routing or OpenRouteService (`is_simulated = False`). If actual road routing fails, the system returns a clear routing-unavailable error by default. Synthetic fallback corridors (`is_simulated = True`) are explicitly labeled and cannot be presented as certified driving routes.
 - **Actual Route Polyline Sampling:** Weather checkpoints generated along true highway geometry at user-selected intervals (**10, 25, or 50 miles**), with guaranteed terminal destination inclusion.
-- **ETA-Synchronized Hourly Weather:** Weather conditions retrieved for the truck's exact estimated arrival hour at each checkpoint via Open-Meteo API.
-- **Deterministic Risk Rules:** Strict classification thresholds for Wind (mph), Rain (in/hr), and Snow (in/hr).
+- **Consistent Timezone & ETA Matching:** Browser timezone offset (`timezone_offset_minutes`) is passed to prevent naive datetime drift. Checkpoint ETAs and Open-Meteo hourly forecast timestamps align to the exact same UTC instant.
+- **Safe Missing Weather Handling:** Unavailable weather data is explicitly classified as `Data Unavailable` (never converted to 0.0 or classified as Low risk). Routes with missing forecast data have safety clearance withheld (`is_safe_for_travel = False`).
+- **Deterministic Risk Rules:** Strict classification thresholds for Wind (mph), Rain (in/hr), Snow (in/hr), and Data Unavailable.
 - **Gross Load-Based Risk Adjustments:** Dynamic penalties for heavy cargo (>30,000 lb and >40,000 lb) during high-wind conditions.
-- **Lexicographical Route Recommendation:** Safety strictly prioritized over travel time (Fewest Severe miles $\to$ Fewest High miles $\to$ Lowest average risk score $\to$ Shortest travel time).
+- **Lexicographical Route Recommendation:** Safety strictly prioritized over travel time (Fewest Severe miles $\to$ Fewest High miles $\to$ Lowest average risk score $\to$ Shortest travel time). Routes with missing weather or simulated geometry are never cleared as safe.
 - **Hard Safety Constraint:** Any route with active "No Travel" conditions is disqualified from safe recommendation; an immediate warning is generated if all routes are hazardous.
-- **Interactive Leaflet Map:** Custom risk-coded checkpoint markers, distinct route polylines, and popups displaying granular atmospheric metrics and load rule impacts.
-- **0–48 Hour Corridor Forecast Slider:** Animated playback and interactive scrubber allowing dispatchers to preview weather evolution along the corridor.
-- **Risk Exposure Breakdown Chart:** Visual horizontal stacked bar chart (Recharts) displaying low, moderate, high, severe, and no-travel miles.
-- **Hazard Checkpoint Inspector:** Searchable, filterable table for detailed segment-by-segment inspection.
+- **Interactive Leaflet Map & Dynamic Heatmap:** Custom risk-coded checkpoint markers, distinct route polylines, dynamic risk segments, and popups displaying atmospheric metrics and load rule impacts.
+- **0–48 Hour Corridor Forecast Slider:** Slider represents hours relative to trip departure time ($T_{\text{dep}} + H$). Recalculates checkpoint risk and route heatmap segments dynamically for the selected hour.
+- **Risk Exposure Breakdown Chart:** Visual horizontal stacked bar chart (Recharts) displaying low, moderate, high, severe, no-travel, and unforecasted miles.
+- **Hazard Checkpoint Inspector:** Searchable, filterable table for detailed segment-by-segment inspection with support for missing data states.
 
 ---
 
@@ -309,19 +310,19 @@ Frontend will be active at `http://localhost:5173/`.
 
 ## 10. Running Automated Tests
 
-### Backend Tests (41 Tests)
+### Backend Tests (55 Tests)
 ```bash
 cd backend
 pytest -v
 ```
 
-### Frontend Tests (5 Tests)
+### Frontend Tests (14 Tests)
 ```bash
 cd frontend
 npm test
 ```
 
-**Total Test Suite: 46 Automated Tests Passing (100% Success Rate).**
+**Total Test Suite: 69 Automated Tests Passing (100% Success Rate).**
 
 ---
 

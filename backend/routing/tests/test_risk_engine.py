@@ -153,3 +153,52 @@ class TestCheckpointAggregation:
         # Wind is 48 mph (Severe), Load is 35,000 lb (>30k) -> No Travel
         res = evaluate_checkpoint_risk(48.0, 0.0, 0.0, 35000.0)
         assert res["final_risk"] == RISK_NO_TRAVEL
+
+
+class TestMissingWeatherHandling:
+    def test_missing_weather_values_return_unknown_never_low(self):
+        from routing.services.risk_engine import (
+            classify_wind_risk,
+            classify_rain_risk,
+            classify_snow_risk,
+            RISK_UNKNOWN,
+            RISK_LOW,
+            get_higher_risk,
+        )
+
+        assert classify_wind_risk(None) == RISK_UNKNOWN
+        assert classify_wind_risk(None) != RISK_LOW
+
+        assert classify_rain_risk(None) == RISK_UNKNOWN
+        assert classify_rain_risk(None) != RISK_LOW
+
+        assert classify_snow_risk(None) == RISK_UNKNOWN
+        assert classify_snow_risk(None) != RISK_LOW
+
+    def test_checkpoint_with_missing_weather_evaluates_to_unknown(self):
+        from routing.services.risk_engine import RISK_UNKNOWN, evaluate_checkpoint_risk
+
+        # All values None
+        res = evaluate_checkpoint_risk(None, None, None, 30000.0)
+        assert res["final_risk"] == RISK_UNKNOWN
+        assert res["forecast_available"] is False
+        assert "unavailable" in res["reason"].lower()
+
+    def test_checkpoint_with_forecast_unavailable_flag(self):
+        from routing.services.risk_engine import RISK_UNKNOWN, evaluate_checkpoint_risk
+
+        # Even if dummy numerical values exist, forecast_available=False forces RISK_UNKNOWN
+        res = evaluate_checkpoint_risk(5.0, 0.0, 0.0, 30000.0, forecast_available=False)
+        assert res["final_risk"] == RISK_UNKNOWN
+        assert res["forecast_available"] is False
+
+    def test_unknown_risk_takes_precedence_over_low_risk(self):
+        from routing.services.risk_engine import RISK_UNKNOWN, RISK_LOW, RISK_SEVERE, get_higher_risk
+
+        # Missing data is prioritized over Low risk so it cannot be certified safe
+        assert get_higher_risk(RISK_UNKNOWN, RISK_LOW) == RISK_UNKNOWN
+        assert get_higher_risk(RISK_LOW, RISK_UNKNOWN) == RISK_UNKNOWN
+
+        # Severe / No Travel hazards still outrank Unknown
+        assert get_higher_risk(RISK_UNKNOWN, RISK_SEVERE) == RISK_SEVERE
+

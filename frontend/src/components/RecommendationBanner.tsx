@@ -17,22 +17,43 @@ export const RecommendationBanner: React.FC<RecommendationBannerProps> = ({
   const recommendedRoute = routes.find((r) => r.id === recommended_route_id);
 
   if (!is_any_safe || !recommendedRoute) {
+    const isMissingData = explanation.toLowerCase().includes('unavailable') || explanation.toLowerCase().includes('missing');
+    const isSimulated = explanation.toLowerCase().includes('simulated');
+
     return (
       <div className="bg-rose-50 border-2 border-rose-400 rounded-2xl p-5 shadow-sm text-rose-950">
-        <div className="flex items-start gap-4">
-          <div className="p-3 bg-rose-200/80 rounded-xl text-rose-800 shrink-0">
-            <XCircle className="h-6 w-6" />
-          </div>
-          <div className="space-y-1.5 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-900 text-white">
-                No Safe Route Available
-              </span>
-              <span className="text-xs font-semibold text-rose-800">Dispatch Warning</span>
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-rose-200/80 rounded-xl text-rose-800 shrink-0">
+              <XCircle className="h-6 w-6" />
             </div>
-            <h3 className="text-base font-bold text-rose-950">Active Hazard / No-Travel Weather Detected</h3>
-            <p className="text-sm text-rose-900/90 leading-relaxed">{explanation}</p>
+            <div className="space-y-1.5 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-900 text-white">
+                  {isMissingData ? 'Clearance Withheld' : isSimulated ? 'Unverified Geometry' : 'No Safe Route Available'}
+                </span>
+                <span className="text-xs font-semibold text-rose-800">Dispatch Warning</span>
+              </div>
+              <h3 className="text-base font-bold text-rose-950">
+                {isMissingData
+                  ? 'Weather Forecast Unavailable — Safety Clearance Withheld'
+                  : isSimulated
+                  ? 'Simulated Geometry Fallback — Safety Clearance Withheld'
+                  : 'Active Hazard / No-Travel Weather Detected'}
+              </h3>
+              <p className="text-sm text-rose-900/90 leading-relaxed">{explanation}</p>
+            </div>
           </div>
+
+          {recommendedRoute && (
+            <button
+              onClick={() => onSelectRoute(recommendedRoute.id)}
+              className="self-start sm:self-center shrink-0 px-3.5 py-2 bg-rose-900 hover:bg-rose-950 text-white text-xs font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition-all"
+            >
+              <span>Inspect Best Route</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     );

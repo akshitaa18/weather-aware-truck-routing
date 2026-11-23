@@ -1,7 +1,7 @@
 import React from 'react';
 import type { RouteData } from '../types';
 import { getRouteColor } from '../utils/colors';
-import { AlertOctagon, Award, Check } from 'lucide-react';
+import { AlertOctagon, Award, Check, AlertTriangle, AlertCircle } from 'lucide-react';
 
 interface RouteComparisonProps {
   routes: RouteData[];
@@ -30,6 +30,7 @@ export const RouteComparison: React.FC<RouteComparisonProps> = ({
           const isUnsafe = route.is_critically_unsafe;
           const palette = getRouteColor(route.id, idx);
           const metrics = route.metrics;
+          const hasMissingData = route.has_missing_weather || (metrics.unknown_risk_miles && metrics.unknown_risk_miles > 0);
 
           return (
             <div
@@ -53,18 +54,32 @@ export const RouteComparison: React.FC<RouteComparisonProps> = ({
                   </span>
                 </div>
 
-                {isRecommended && (
-                  <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    <Award className="h-3 w-3" />
-                    Best Choice
-                  </span>
-                )}
-                {isUnsafe && (
-                  <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-900 border border-rose-300">
-                    <AlertOctagon className="h-3 w-3 text-rose-600" />
-                    No Travel Hazard
-                  </span>
-                )}
+                <div className="flex flex-wrap items-center gap-1 justify-end">
+                  {route.is_simulated && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                      <AlertTriangle className="h-3 w-3 text-amber-600" />
+                      Simulated
+                    </span>
+                  )}
+                  {hasMissingData && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 border border-slate-300">
+                      <AlertCircle className="h-3 w-3 text-slate-600" />
+                      Missing Data
+                    </span>
+                  )}
+                  {isRecommended && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      <Award className="h-3 w-3" />
+                      Best Choice
+                    </span>
+                  )}
+                  {isUnsafe && (
+                    <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-900 border border-rose-300">
+                      <AlertOctagon className="h-3 w-3 text-rose-600" />
+                      No Travel Hazard
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Distance & Duration */}
@@ -116,6 +131,22 @@ export const RouteComparison: React.FC<RouteComparisonProps> = ({
                 <div className="mb-2 p-1.5 rounded bg-rose-50 border border-rose-200 text-[11px] font-medium text-rose-800 flex items-center justify-center gap-1">
                   <AlertOctagon className="h-3 w-3 shrink-0" />
                   <span>{metrics.no_travel_miles} miles of No-Travel conditions</span>
+                </div>
+              )}
+
+              {/* Simulated Geometry Warning if present */}
+              {route.is_simulated && (
+                <div className="mb-2 p-1.5 rounded bg-amber-50 border border-amber-200 text-[10px] font-medium text-amber-900 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600" />
+                  <span>Synthetic geometry — not a verified road corridor</span>
+                </div>
+              )}
+
+              {/* Missing Data Warning if present */}
+              {hasMissingData && (
+                <div className="mb-2 p-1.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-700 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3 shrink-0 text-slate-500" />
+                  <span>{metrics.unknown_risk_miles || 0} mi unforecasted; safety clearance withheld</span>
                 </div>
               )}
 

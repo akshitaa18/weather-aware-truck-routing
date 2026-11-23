@@ -37,6 +37,8 @@ class AnalyzeRoutesView(APIView):
                 departure_time_iso=data["departure_time"],
                 load_weight_lb=data["load_weight_lb"],
                 sampling_interval_miles=float(data["sampling_interval_miles"]),
+                user_timezone_offset_minutes=data.get("timezone_offset_minutes"),
+                allow_simulated_fallback=data.get("allow_simulated_fallback", False),
             )
             return Response(result, status=status.HTTP_200_OK)
         except ValueError as ve:

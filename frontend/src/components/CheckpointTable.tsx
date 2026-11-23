@@ -68,6 +68,7 @@ export const CheckpointTable: React.FC<CheckpointTableProps> = ({
             <option value="High">High Risk Only</option>
             <option value="Moderate">Moderate Only</option>
             <option value="Low">Low Risk Only</option>
+            <option value="Data Unavailable">Data Unavailable Only</option>
           </select>
         </div>
       </div>
@@ -96,7 +97,7 @@ export const CheckpointTable: React.FC<CheckpointTableProps> = ({
               </tr>
             ) : (
               filtered.map((cp) => {
-                const riskConfig = RISK_COLORS[cp.final_risk] || RISK_COLORS.Low;
+                const riskConfig = RISK_COLORS[cp.final_risk] || RISK_COLORS['Data Unavailable'] || RISK_COLORS.Low;
                 return (
                   <tr key={cp.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-2 px-3 font-bold text-slate-800">
@@ -109,19 +110,29 @@ export const CheckpointTable: React.FC<CheckpointTableProps> = ({
                       {cp.arrival_time_formatted || cp.estimated_arrival_time}
                     </td>
                     <td className="py-2 px-3">
-                      <span className="font-semibold text-slate-800">{cp.wind_speed_mph}</span>
+                      <span className="font-semibold text-slate-800">
+                        {cp.wind_speed_mph !== null ? cp.wind_speed_mph : 'N/A'}
+                      </span>
                       <span className="text-[10px] text-slate-400 ml-1">({cp.wind_risk})</span>
                     </td>
                     <td className="py-2 px-3">
-                      <span className="font-semibold text-slate-800">{cp.rain_intensity_in_hr}</span>
+                      <span className="font-semibold text-slate-800">
+                        {cp.rain_intensity_in_hr !== null ? cp.rain_intensity_in_hr : 'N/A'}
+                      </span>
                       <span className="text-[10px] text-slate-400 ml-1">({cp.rain_risk})</span>
                     </td>
                     <td className="py-2 px-3">
-                      <span className="font-semibold text-slate-800">{cp.snow_intensity_in_hr}</span>
+                      <span className="font-semibold text-slate-800">
+                        {cp.snow_intensity_in_hr !== null ? cp.snow_intensity_in_hr : 'N/A'}
+                      </span>
                       <span className="text-[10px] text-slate-400 ml-1">({cp.snow_risk})</span>
                     </td>
                     <td className="py-2 px-3">
-                      {cp.load_adjusted_risk !== 'None' ? (
+                      {cp.final_risk === 'Data Unavailable' ? (
+                        <span className="text-[10px] font-semibold text-slate-500 italic">
+                          Missing forecast
+                        </span>
+                      ) : cp.load_adjusted_risk !== 'None' ? (
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
                           Elevated: {cp.load_adjusted_risk}
                         </span>

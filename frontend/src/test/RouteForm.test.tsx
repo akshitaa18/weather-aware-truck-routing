@@ -45,4 +45,22 @@ describe('RouteForm Component', () => {
     expect(handleSubmit).not.toHaveBeenCalled();
     expect(screen.getByText(/Origin and destination must be different cities/i)).toBeInTheDocument();
   });
+
+  it('submits form payload including timezone_offset_minutes', () => {
+    const handleSubmit = vi.fn();
+    render(<RouteForm onSubmit={handleSubmit} isLoading={false} />);
+
+    const submitBtn = screen.getByText('Analyze Alternative Routes');
+    fireEvent.click(submitBtn);
+
+    expect(handleSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        origin: 'Chicago, IL',
+        destination: 'Detroit, MI',
+        load_weight_lb: 38000,
+        sampling_interval_miles: 25,
+        timezone_offset_minutes: expect.any(Number),
+      })
+    );
+  });
 });
