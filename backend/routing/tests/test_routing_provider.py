@@ -109,6 +109,32 @@ class TestMultiSourceRoutingManager:
         }
         assert routes_are_substantially_different(r1, r2) is True
 
+    def test_routes_sharing_most_highway_with_short_isolated_divergence_rejected_as_duplicate(self):
+        from routing.services.routing_provider import routes_are_substantially_different
+        # Routes share 90% of a 150-mile highway corridor, but Route 2 takes a short 10-mile loop detour
+        # that reaches 12 miles away before immediately rejoining the shared corridor.
+        # Although maximum Hausdorff deviation is > 8.0 miles, the proportion of divergent points is small (<20%).
+        # It must be rejected as an overlapping duplicate rather than a distinct alternative corridor.
+        r1 = {
+            "distance_miles": 150.0,
+            "coordinates": [
+                [40.0, -75.0], [40.0, -74.8], [40.0, -74.6], [40.0, -74.4],
+                [40.0, -74.2], [40.0, -74.0], [40.0, -73.8], [40.0, -73.6],
+                [40.0, -73.4], [40.0, -73.2], [40.0, -73.0]
+            ]
+        }
+        r2 = {
+            "distance_miles": 155.0,
+            "coordinates": [
+                [40.0, -75.0], [40.0, -74.8], [40.0, -74.6], [40.0, -74.4],
+                [40.2, -74.3], [40.2, -74.1], [40.0, -74.0], [40.0, -73.8],
+                [40.0, -73.6], [40.0, -73.4], [40.0, -73.2], [40.0, -73.0]
+            ]
+        }
+        # Not distinct because divergence is confined to an isolated short segment (<20% of route)
+        assert routes_are_substantially_different(r1, r2) is False
+
+
     @patch.object(OpenRouteServiceProvider, "get_three_routes")
     @patch.object(OSRMProvider, "get_three_routes")
     def test_manager_deduplicates_and_reindexes_route_ids(self, mock_osrm, mock_ors):

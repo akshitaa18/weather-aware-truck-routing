@@ -58,7 +58,15 @@ def make_test_route(
     duration_formatted: str = "",
 ) -> dict:
     if duration_formatted == "":
-        duration_formatted = f"{int(duration_seconds // 3600)}h {int((duration_seconds % 3600) // 60)}m"
+        try:
+            import math
+            if isinstance(duration_seconds, (int, float)) and math.isfinite(duration_seconds):
+                duration_formatted = f"{int(duration_seconds // 3600)}h {int((duration_seconds % 3600) // 60)}m"
+            else:
+                duration_formatted = str(duration_seconds)
+        except Exception:
+            duration_formatted = str(duration_seconds)
+
     return {
         "id": route_id,
         "name": name,
@@ -341,6 +349,53 @@ class TestFailClosedRecommendationEligibility:
 
         r_neg = make_test_route("r1", "R1", -100.0, 50)
         assert is_route_eligible(r_neg) is False
+
+    def test_nan_in_numeric_metrics_disqualifies_route(self):
+        from routing.services.recommendation import is_route_eligible
+        nan = float("nan")
+
+        assert is_route_eligible(make_test_route("r1", "R1", nan, 50)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, severe_risk_miles=nan)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, high_risk_miles=nan)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, average_risk_score=nan)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, unknown_risk_miles=nan)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, no_travel_miles=nan)) is False
+
+    def test_infinity_in_numeric_metrics_disqualifies_route(self):
+        from routing.services.recommendation import is_route_eligible
+        pos_inf = float("inf")
+        neg_inf = float("-inf")
+
+        for inf_val in (pos_inf, neg_inf):
+            assert is_route_eligible(make_test_route("r1", "R1", inf_val, 50)) is False
+            assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, severe_risk_miles=inf_val)) is False
+            assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, high_risk_miles=inf_val)) is False
+            assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, average_risk_score=inf_val)) is False
+            assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, unknown_risk_miles=inf_val)) is False
+            assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, no_travel_miles=inf_val)) is False
+
+    def test_boolean_values_in_numeric_metrics_disqualifies_route(self):
+        from routing.services.recommendation import is_route_eligible
+
+        # In Python, isinstance(True, int) is True, but booleans are NOT valid mileage or durations
+        assert is_route_eligible(make_test_route("r1", "R1", True, 50)) is False  # type: ignore
+        assert is_route_eligible(make_test_route("r1", "R1", False, 50)) is False  # type: ignore
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, severe_risk_miles=True)) is False  # type: ignore
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, high_risk_miles=True)) is False  # type: ignore
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, average_risk_score=True)) is False  # type: ignore
+        # Even though False == 0.0 in Python, False is a boolean and must be disqualified!
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, unknown_risk_miles=False)) is False  # type: ignore
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, no_travel_miles=False)) is False  # type: ignore
+
+    def test_negative_numeric_metrics_disqualify_route(self):
+        from routing.services.recommendation import is_route_eligible
+
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, severe_risk_miles=-1.0)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, high_risk_miles=-5.0)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, average_risk_score=-0.5)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, unknown_risk_miles=-10.0)) is False
+        assert is_route_eligible(make_test_route("r1", "R1", 1000, 50, no_travel_miles=-2.0)) is False
+
 
 
 class TestUnknownWeatherMileageAccounting:

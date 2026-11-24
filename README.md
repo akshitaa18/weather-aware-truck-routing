@@ -316,13 +316,13 @@ Frontend will be active at `http://localhost:5173/`.
 
 ## 10. Running Automated Tests
 
-### Backend Tests (103 Tests)
+### Backend Tests (108 Tests)
 ```bash
 cd backend
 venv\Scripts\pytest -v
 ```
 
-### Frontend Tests (18 Tests)
+### Frontend Tests (21 Tests)
 ```bash
 cd frontend
 npm test -- --run
@@ -334,7 +334,8 @@ cd frontend
 npm run build
 ```
 
-**Total Automated Test Suite: 121 Automated Tests Passing (100% Success Rate).**
+**Total Automated Test Suite: 129 Automated Tests Passing (100% Success Rate).**
+
 
 ---
 
@@ -417,6 +418,7 @@ Use this structured script outline when recording the video demonstration for Sp
    - Show the Checkpoint Hazard Inspector table with search and risk filters.
 6. **Codebase & Testing Verification (1 min):**
    - Showcase modular backend service architecture (`routing/services/`).
-   - Highlight the 121 passing automated tests (103 backend Pytest + 18 frontend Vitest).
+   - Highlight the 129 passing automated tests (108 backend Pytest + 21 frontend Vitest).
    - Conclude with production readiness (Docker, Render, Vercel).
+
 

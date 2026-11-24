@@ -11,7 +11,25 @@ Implements the exact lexicographical priority comparison required by Section 9:
 7. Priority 4: Shortest travel time (tie-breaker)
 """
 
+import math
 from typing import List, Dict, Any, Tuple
+
+
+def is_valid_finite_number(val: Any) -> bool:
+    """
+    Check if a value is a valid finite float or int and NOT a Boolean.
+    In Python, bool is a subclass of int (isinstance(True, int) is True),
+    so we must explicitly reject Boolean instances.
+    Also rejects None, NaN, +inf, -inf, and non-numeric types.
+    """
+    if val is None or isinstance(val, bool):
+        return False
+    if not isinstance(val, (int, float)):
+        return False
+    try:
+        return math.isfinite(val)
+    except (TypeError, ValueError):
+        return False
 
 
 def is_route_eligible(route: Dict[str, Any]) -> bool:
@@ -22,14 +40,14 @@ def is_route_eligible(route: Dict[str, Any]) -> bool:
     1. Route structure is valid and non-empty.
     2. Route is verified road geometry (is_verified_road_route is True).
     3. Route is NOT simulated geometry (is_simulated is False).
-    4. Duration is a valid positive number.
+    4. Duration is a valid, finite positive number (rejects bool, NaN, inf, <= 0).
     5. Route contains valid, non-empty metrics.
     6. Complete weather forecast data is available (has_missing_weather is False and unknown_risk_miles == 0.0).
-    7. Zero miles of No Travel conditions (no_travel_miles == 0.0).
+    7. Zero miles of No Travel conditions (no_travel_miles == 0.0, finite, non-bool).
     8. Route is explicitly cleared as safe for travel (is_safe_for_travel is True).
-    9. Severe and High risk miles and average risk score are valid numbers.
+    9. Severe and High risk miles and average risk score are valid, finite numbers (rejects bool, NaN, inf, < 0).
     
-    Missing, None, or invalid required safety fields strictly disqualify the route.
+    Missing, None, Boolean, NaN, infinite, or invalid required safety fields strictly disqualify the route.
     """
     if not isinstance(route, dict) or not route:
         return False
@@ -40,9 +58,9 @@ def is_route_eligible(route: Dict[str, Any]) -> bool:
     if route.get("is_verified_road_route") is not True:
         return False
 
-    # 2. Duration check
+    # 2. Duration check - must be finite, non-bool, positive
     duration = route.get("duration_seconds")
-    if not isinstance(duration, (int, float)) or duration <= 0:
+    if not is_valid_finite_number(duration) or duration <= 0:
         return False
 
     # 3. Metrics validation
@@ -54,29 +72,29 @@ def is_route_eligible(route: Dict[str, Any]) -> bool:
     if metrics.get("has_missing_weather") is not False:
         return False
     unknown_miles = metrics.get("unknown_risk_miles")
-    if not isinstance(unknown_miles, (int, float)) or unknown_miles != 0.0:
+    if not is_valid_finite_number(unknown_miles) or unknown_miles != 0.0:
         return False
 
-    # 5. No Travel constraint
+    # 5. No Travel constraint - must be finite, non-bool, exactly 0.0
     no_travel = metrics.get("no_travel_miles")
-    if not isinstance(no_travel, (int, float)) or no_travel != 0.0:
+    if not is_valid_finite_number(no_travel) or no_travel != 0.0:
         return False
 
     # 6. Explicit safety clearance
     if metrics.get("is_safe_for_travel") is not True:
         return False
 
-    # 7. Safety risk metrics presence and validity
+    # 7. Safety risk metrics presence and validity (finite, non-bool, non-negative)
     severe = metrics.get("severe_risk_miles")
-    if not isinstance(severe, (int, float)) or severe < 0:
+    if not is_valid_finite_number(severe) or severe < 0:
         return False
 
     high = metrics.get("high_risk_miles")
-    if not isinstance(high, (int, float)) or high < 0:
+    if not is_valid_finite_number(high) or high < 0:
         return False
 
     avg_score = metrics.get("average_risk_score")
-    if not isinstance(avg_score, (int, float)) or avg_score <= 0:
+    if not is_valid_finite_number(avg_score) or avg_score <= 0:
         return False
 
     return True
@@ -119,16 +137,28 @@ def presentation_sort_key(route: Dict[str, Any]) -> Tuple[int, int, int, int, fl
     if not isinstance(metrics, dict):
         metrics = {}
 
-    no_travel = float(metrics.get("no_travel_miles") or 0.0)
-    has_missing = bool(metrics.get("has_missing_weather", False) or (float(metrics.get("unknown_risk_miles") or 0.0) > 0))
+    raw_no_travel = metrics.get("no_travel_miles")
+    no_travel = float(raw_no_travel) if is_valid_finite_number(raw_no_travel) and raw_no_travel >= 0 else 0.0
+
+    raw_unknown = metrics.get("unknown_risk_miles")
+    unknown = float(raw_unknown) if is_valid_finite_number(raw_unknown) and raw_unknown >= 0 else 0.0
+
+    has_missing = bool(metrics.get("has_missing_weather", False) or unknown > 0)
     is_sim = 1 if route.get("is_simulated", False) else 0
     has_no_travel = 1 if no_travel > 0.0 else 0
     missing_int = 1 if has_missing else 0
 
-    severe = float(metrics.get("severe_risk_miles") or 0.0)
-    high = float(metrics.get("high_risk_miles") or 0.0)
-    avg_score = float(metrics.get("average_risk_score") or 999.0)
-    duration = float(route.get("duration_seconds") or 999999.0)
+    raw_severe = metrics.get("severe_risk_miles")
+    severe = float(raw_severe) if is_valid_finite_number(raw_severe) and raw_severe >= 0 else 999999.0
+
+    raw_high = metrics.get("high_risk_miles")
+    high = float(raw_high) if is_valid_finite_number(raw_high) and raw_high >= 0 else 999999.0
+
+    raw_avg = metrics.get("average_risk_score")
+    avg_score = float(raw_avg) if is_valid_finite_number(raw_avg) and raw_avg > 0 else 999.0
+
+    raw_dur = route.get("duration_seconds")
+    duration = float(raw_dur) if is_valid_finite_number(raw_dur) and raw_dur > 0 else 999999.0
 
     return (
         ineligible,
@@ -140,6 +170,7 @@ def presentation_sort_key(route: Dict[str, Any]) -> Tuple[int, int, int, int, fl
         avg_score,
         duration,
     )
+
 
 
 # Backward compatibility alias

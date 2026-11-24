@@ -78,11 +78,18 @@ def routes_are_substantially_different(r1: Dict[str, Any], r2: Dict[str, Any]) -
     Check if two routes follow substantially distinct driving corridors based on actual geometry.
     
     Distance difference alone is NEVER sufficient to declare two routes distinct.
-    Compares the geometry using distance-based sampling along the complete polylines.
-    Rejects identical or substantially overlapping routes as duplicates, even if reported distances differ.
+    Compares the geometry using physical-distance-based sampling along the complete polylines.
+    Rejects identical and substantially overlapping routes as duplicates, even if reported distances differ.
     
-    Threshold:
-    Requires maximum cross-track deviation between sampled paths of at least 8.0 miles.
+    Distinctness Criterion:
+    - Calculates the proportion of sampled points on each route that are at least 8.0 miles
+      from the closest point on the other route.
+    - Uses bidirectional comparison (checks divergence of route 1 from route 2, and route 2 from route 1).
+    - Requires meaningful corridor divergence across a sufficient proportion of the route
+      (at least 20% of sampled points on both routes must be >= 8.0 miles apart),
+      rather than relying solely on an isolated maximum deviation.
+    - Rejects routes that share most of their highway and diverge only for a short section or detour.
+    - Preserves acceptance of genuinely distinct alternative highway corridors (e.g. northern vs southern).
     """
     coords1 = r1.get("coordinates", [])
     coords2 = r2.get("coordinates", [])
@@ -96,21 +103,25 @@ def routes_are_substantially_different(r1: Dict[str, Any], r2: Dict[str, Any]) -
     if not samples1 or not samples2:
         return False
 
-    # dev1: maximum distance from any sample on route 1 to the closest sample on route 2
-    dev1 = max(
+    # Bidirectional distance calculations for each sampled point
+    dists_from_1_to_2 = [
         min(haversine_distance_miles(p1[0], p1[1], p2[0], p2[1]) for p2 in samples2)
         for p1 in samples1
-    )
-    # dev2: maximum distance from any sample on route 2 to the closest sample on route 1
-    dev2 = max(
+    ]
+    dists_from_2_to_1 = [
         min(haversine_distance_miles(p2[0], p2[1], p1[0], p1[1]) for p1 in samples1)
         for p2 in samples2
-    )
+    ]
 
-    max_deviation = max(dev1, dev2)
+    # Calculate proportion of sampled points on each route that are at least 8.0 miles away
+    prop1 = sum(1 for d in dists_from_1_to_2 if d >= 8.0) / float(len(samples1))
+    prop2 = sum(1 for d in dists_from_2_to_1 if d >= 8.0) / float(len(samples2))
 
-    # Routes must diverge by at least 8.0 miles across the corridor to be distinct alternatives
-    return max_deviation >= 8.0
+    # Meaningful corridor divergence requirement:
+    # Requires at least 20% of sampled points on both routes to be at least 8.0 miles apart.
+    # Isolated deviations on a shared highway (< 20%) are rejected as duplicates.
+    return prop1 >= 0.20 and prop2 >= 0.20
+
 
 
 def format_duration(seconds: float) -> str:

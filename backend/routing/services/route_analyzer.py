@@ -45,6 +45,7 @@ def analyze_route_metrics(
             "verified_moderate_risk_miles": 0.0,
             "verified_high_risk_miles": 0.0,
             "verified_severe_risk_miles": 0.0,
+            "verified_no_travel_miles": 0.0,
             "known_hazard_severe_miles": 0.0,
             "known_hazard_high_miles": 0.0,
             "known_hazard_moderate_miles": 0.0,
@@ -61,8 +62,10 @@ def analyze_route_metrics(
     verified_mod_miles = 0.0
     verified_high_miles = 0.0
     verified_severe_miles = 0.0
+    verified_no_travel_miles = 0.0
     no_travel_miles = 0.0
     unknown_miles = 0.0
+
 
     # Separate trackers for known hazards on partial/incomplete weather segments
     known_hazard_severe_miles = 0.0
@@ -93,9 +96,11 @@ def analyze_route_metrics(
 
         if seg_fully_verified:
             if seg_risk == RISK_NO_TRAVEL:
+                verified_no_travel_miles += seg_dist
                 no_travel_miles += seg_dist
                 weighted_risk_sum += seg_dist * 5.0
                 total_verified_miles += seg_dist
+
             elif seg_risk == RISK_SEVERE:
                 verified_severe_miles += seg_dist
                 weighted_risk_sum += seg_dist * 4.0
@@ -178,11 +183,13 @@ def analyze_route_metrics(
         "high_risk_miles": round(verified_high_miles, 1),
         "severe_risk_miles": round(verified_severe_miles, 1),
         "no_travel_miles": round(no_travel_miles, 1),
+        "verified_no_travel_miles": round(verified_no_travel_miles, 1),
         "unknown_risk_miles": round(unknown_miles, 1),
         "verified_low_risk_miles": round(verified_low_miles, 1),
         "verified_moderate_risk_miles": round(verified_mod_miles, 1),
         "verified_high_risk_miles": round(verified_high_miles, 1),
         "verified_severe_risk_miles": round(verified_severe_miles, 1),
+
         "known_hazard_severe_miles": round(known_hazard_severe_miles, 1),
         "known_hazard_high_miles": round(known_hazard_high_miles, 1),
         "known_hazard_moderate_miles": round(known_hazard_moderate_miles, 1),
