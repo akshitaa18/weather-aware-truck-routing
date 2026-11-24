@@ -202,3 +202,96 @@ class TestMissingWeatherHandling:
         # Severe / No Travel hazards still outrank Unknown
         assert get_higher_risk(RISK_UNKNOWN, RISK_SEVERE) == RISK_SEVERE
 
+
+class TestPartialWeatherEvaluation:
+    """
+    Regression tests for partial weather evaluation:
+    - Wind available, rain missing.
+    - Wind available, snow missing.
+    - Rain or snow showing No Travel while another measurement is unavailable.
+    - Wind >= 55 mph with missing rain/snow still producing No Travel.
+    - Partial missing weather never receiving safe-travel clearance.
+    - Forecast availability being false when any required measurement is missing.
+    """
+
+    def test_wind_available_rain_missing(self):
+        # Moderate wind (30 mph), rain is missing (None), snow is 0.0
+        res = evaluate_checkpoint_risk(30.0, None, 0.0, 30000.0)
+        assert res["wind_risk"] == RISK_MODERATE
+        assert res["rain_risk"] == "Data Unavailable"
+        assert res["snow_risk"] == RISK_LOW
+        assert res["final_risk"] == RISK_MODERATE
+        assert res["forecast_available"] is False
+        assert "Incomplete forecast data (missing rain)" in res["reason"]
+
+        # Low wind (15 mph), rain missing (None), snow 0.0 -> Must be Data Unavailable, never Low!
+        res_low = evaluate_checkpoint_risk(15.0, None, 0.0, 30000.0)
+        assert res_low["wind_risk"] == RISK_LOW
+        assert res_low["rain_risk"] == "Data Unavailable"
+        assert res_low["snow_risk"] == RISK_LOW
+        assert res_low["final_risk"] == "Data Unavailable"
+        assert res_low["final_risk"] != RISK_LOW
+        assert res_low["forecast_available"] is False
+
+    def test_wind_available_snow_missing(self):
+        # Moderate wind (30 mph), snow is missing (None), rain is 0.0
+        res = evaluate_checkpoint_risk(30.0, 0.0, None, 30000.0)
+        assert res["wind_risk"] == RISK_MODERATE
+        assert res["snow_risk"] == "Data Unavailable"
+        assert res["rain_risk"] == RISK_LOW
+        assert res["final_risk"] == RISK_MODERATE
+        assert res["forecast_available"] is False
+        assert "Incomplete forecast data (missing snow)" in res["reason"]
+
+        # Low wind (10 mph), snow missing (None), rain 0.0 -> Must be Data Unavailable, never Low!
+        res_low = evaluate_checkpoint_risk(10.0, 0.0, None, 30000.0)
+        assert res_low["wind_risk"] == RISK_LOW
+        assert res_low["snow_risk"] == "Data Unavailable"
+        assert res_low["final_risk"] == "Data Unavailable"
+        assert res_low["final_risk"] != RISK_LOW
+        assert res_low["forecast_available"] is False
+
+    def test_rain_or_snow_showing_no_travel_while_another_measurement_unavailable(self):
+        # Torrential rain (1.5 in/hr -> No Travel) while wind and snow are unavailable
+        res_rain = evaluate_checkpoint_risk(None, 1.5, None, 30000.0)
+        assert res_rain["rain_risk"] == RISK_NO_TRAVEL
+        assert res_rain["wind_risk"] == "Data Unavailable"
+        assert res_rain["snow_risk"] == "Data Unavailable"
+        # Known No-Travel hazard must NOT be hidden by missing wind/snow
+        assert res_rain["final_risk"] == RISK_NO_TRAVEL
+        assert res_rain["forecast_available"] is False
+
+        # Blizzard snow (3.5 in/hr -> No Travel) while rain is missing and wind is light (10 mph)
+        res_snow = evaluate_checkpoint_risk(10.0, None, 3.5, 30000.0)
+        assert res_snow["snow_risk"] == RISK_NO_TRAVEL
+        assert res_snow["rain_risk"] == "Data Unavailable"
+        assert res_snow["final_risk"] == RISK_NO_TRAVEL
+        assert res_snow["forecast_available"] is False
+
+    def test_wind_55_plus_with_missing_rain_or_snow_still_no_travel(self):
+        # Wind 60 mph (>= 55 mph -> No Travel) while rain and snow are missing
+        res = evaluate_checkpoint_risk(60.0, None, None, 30000.0)
+        assert res["wind_risk"] == RISK_NO_TRAVEL
+        assert res["final_risk"] == RISK_NO_TRAVEL
+        assert res["forecast_available"] is False
+
+        # Wind 48 mph (Severe) with load 35,000 lb (>30,000 lb -> Load Rule 2 No Travel) while rain and snow are missing
+        res_load = evaluate_checkpoint_risk(48.0, None, None, 35000.0)
+        assert res_load["wind_risk"] == RISK_SEVERE
+        assert res_load["load_adjusted_risk"] == RISK_NO_TRAVEL
+        assert res_load["final_risk"] == RISK_NO_TRAVEL
+        assert res_load["forecast_available"] is False
+
+    def test_forecast_availability_false_when_any_required_measurement_is_missing(self):
+        # Missing wind
+        assert evaluate_checkpoint_risk(None, 0.05, 0.1, 30000.0)["forecast_available"] is False
+        # Missing rain
+        assert evaluate_checkpoint_risk(15.0, None, 0.1, 30000.0)["forecast_available"] is False
+        # Missing snow
+        assert evaluate_checkpoint_risk(15.0, 0.05, None, 30000.0)["forecast_available"] is False
+        # Missing all
+        assert evaluate_checkpoint_risk(None, None, None, 30000.0)["forecast_available"] is False
+        # All present
+        assert evaluate_checkpoint_risk(15.0, 0.05, 0.1, 30000.0)["forecast_available"] is True
+
+

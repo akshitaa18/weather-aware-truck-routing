@@ -228,3 +228,73 @@ class TestLexicographicalRecommendation:
         assert rec["is_any_safe"] is False
         assert "simulated" in rec["explanation"].lower()
 
+    def test_partial_missing_weather_never_receives_safe_travel_clearance(self):
+        # Checkpoints where one checkpoint has partial missing weather (e.g. wind=10, rain=None, snow=0)
+        route = {"id": "route_partial", "name": "Corridor Alpha", "distance_miles": 100.0, "duration_seconds": 7200.0}
+        checkpoints = [
+            {
+                "id": "cp_0",
+                "distance_from_origin_miles": 0.0,
+                "latitude": 40.0,
+                "longitude": -75.0,
+                "final_risk": RISK_LOW,
+                "forecast_available": True,
+            },
+            {
+                "id": "cp_1",
+                "distance_from_origin_miles": 50.0,
+                "latitude": 40.5,
+                "longitude": -75.5,
+                "final_risk": "Data Unavailable",
+                "forecast_available": False,  # Missing rain
+            },
+            {
+                "id": "cp_2",
+                "distance_from_origin_miles": 100.0,
+                "latitude": 41.0,
+                "longitude": -76.0,
+                "final_risk": RISK_LOW,
+                "forecast_available": True,
+            },
+        ]
+        metrics = analyze_route_metrics(route, checkpoints)
+        assert metrics["has_missing_weather"] is True
+        assert metrics["is_safe_for_travel"] is False
+        assert metrics["unknown_risk_miles"] > 0.0
+
+        route["metrics"] = metrics
+        rec = select_recommended_route([route])
+        assert rec["is_any_safe"] is False
+        assert "SAFETY CLEARANCE WITHHELD" in rec["explanation"]
+
+    def test_partial_missing_weather_with_moderate_hazard_still_withholds_safety_clearance(self):
+        # Checkpoint has wind=30 mph (Moderate), but snow is missing (forecast_available=False)
+        route = {"id": "route_mod_missing", "name": "Corridor Beta", "distance_miles": 100.0, "duration_seconds": 7200.0}
+        checkpoints = [
+            {
+                "id": "cp_0",
+                "distance_from_origin_miles": 0.0,
+                "latitude": 40.0,
+                "longitude": -75.0,
+                "final_risk": RISK_LOW,
+                "forecast_available": True,
+            },
+            {
+                "id": "cp_1",
+                "distance_from_origin_miles": 100.0,
+                "latitude": 41.0,
+                "longitude": -76.0,
+                "final_risk": RISK_MODERATE,
+                "forecast_available": False,  # Moderate wind, but snow missing
+            },
+        ]
+        metrics = analyze_route_metrics(route, checkpoints)
+        assert metrics["has_missing_weather"] is True
+        assert metrics["is_safe_for_travel"] is False
+
+        route["metrics"] = metrics
+        rec = select_recommended_route([route])
+        assert rec["is_any_safe"] is False
+        assert "SAFETY CLEARANCE WITHHELD" in rec["explanation"]
+
+

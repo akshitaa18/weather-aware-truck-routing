@@ -39,11 +39,11 @@ def generate_corridor_heatmap_timeline(
             if hour_offset < len(timeline):
                 entry = timeline[hour_offset]
 
-            if entry and entry.get("forecast_available"):
-                wind = entry["wind_speed_mph"]
-                rain = entry["rain_intensity_in_hr"]
-                snow = entry["snow_intensity_in_hr"]
-                is_avail = True
+            if entry:
+                wind = entry.get("wind_speed_mph")
+                rain = entry.get("rain_intensity_in_hr")
+                snow = entry.get("snow_intensity_in_hr")
+                is_avail = entry.get("forecast_available", False)
             else:
                 # Missing forecast: DO NOT repeat last forecast!
                 wind = None

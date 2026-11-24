@@ -65,13 +65,18 @@ export const RouteForm: React.FC<RouteFormProps> = ({ onSubmit, isLoading }) => 
       return;
     }
 
+    const parsedDepDate = new Date(departureTime);
+    const tzOffset = !isNaN(parsedDepDate.getTime())
+      ? parsedDepDate.getTimezoneOffset()
+      : new Date().getTimezoneOffset();
+
     onSubmit({
       origin: cleanOrigin,
       destination: cleanDest,
       departure_time: departureTime,
       load_weight_lb: Number(loadWeight),
       sampling_interval_miles: samplingInterval,
-      timezone_offset_minutes: new Date().getTimezoneOffset(),
+      timezone_offset_minutes: tzOffset,
     });
   };
 

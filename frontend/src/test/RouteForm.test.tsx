@@ -63,4 +63,57 @@ describe('RouteForm Component', () => {
       })
     );
   });
+
+  it('computes timezone_offset_minutes based on the selected departure date', () => {
+    const handleSubmit = vi.fn();
+    const { container } = render(<RouteForm onSubmit={handleSubmit} isLoading={false} />);
+
+    const dateInput = container.querySelector('input[type="datetime-local"]') as HTMLInputElement;
+    expect(dateInput).not.toBeNull();
+
+    const testDeparture = '2026-07-15T08:00';
+    fireEvent.change(dateInput, { target: { value: testDeparture } });
+
+    const submitBtn = screen.getByText('Analyze Alternative Routes');
+    fireEvent.click(submitBtn);
+
+    const expectedOffset = new Date(testDeparture).getTimezoneOffset();
+    expect(handleSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        departure_time: testDeparture,
+        timezone_offset_minutes: expectedOffset,
+      })
+    );
+  });
+
+  it('submits correct timezone offset for departure dates across daylight-saving time transitions', () => {
+    const handleSubmit = vi.fn();
+    const { container } = render(<RouteForm onSubmit={handleSubmit} isLoading={false} />);
+    const dateInput = container.querySelector('input[type="datetime-local"]') as HTMLInputElement;
+    const submitBtn = screen.getByText('Analyze Alternative Routes');
+
+    // 1. Summer date (July)
+    const summerDate = '2026-07-15T12:00';
+    fireEvent.change(dateInput, { target: { value: summerDate } });
+    fireEvent.click(submitBtn);
+
+    expect(handleSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        departure_time: summerDate,
+        timezone_offset_minutes: new Date(summerDate).getTimezoneOffset(),
+      })
+    );
+
+    // 2. Winter date (November)
+    const winterDate = '2026-11-24T12:00';
+    fireEvent.change(dateInput, { target: { value: winterDate } });
+    fireEvent.click(submitBtn);
+
+    expect(handleSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        departure_time: winterDate,
+        timezone_offset_minutes: new Date(winterDate).getTimezoneOffset(),
+      })
+    );
+  });
 });

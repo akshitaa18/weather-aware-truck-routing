@@ -94,9 +94,10 @@ def select_recommended_route(routes: List[Dict[str, Any]]) -> Dict[str, Any]:
         is_any_safe = False
     elif best_missing:
         unknown_mi = best_metrics.get("unknown_risk_miles", 0.0)
+        loc_str = f"for {unknown_mi:.1f} miles along {best_route['name']}" if unknown_mi > 0 else f"at one or more checkpoints along {best_route['name']}"
         explanation = (
-            f"SAFETY CLEARANCE WITHHELD: Atmospheric forecast data is unavailable for {unknown_mi:.1f} miles "
-            f"along {best_route['name']}. Routes cannot be certified safe when required weather data is missing. "
+            f"SAFETY CLEARANCE WITHHELD: Atmospheric forecast data is incomplete or unavailable {loc_str}. "
+            "Routes cannot be certified safe when required weather data is missing. "
             "Dispatch clearance withheld until forecast data is confirmed."
         )
         is_any_safe = False

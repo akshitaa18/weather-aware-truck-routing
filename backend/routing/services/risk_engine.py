@@ -158,14 +158,45 @@ def evaluate_checkpoint_risk(
     """
     Calculate checkpoint-level weather risks, apply load rules, and aggregate final risk.
     
-    If forecast_available is False or weather variables are None:
-    - Never classify as Low risk.
-    - Classify as RISK_UNKNOWN ('Data Unavailable').
+    Evaluates every available weather measurement independently.
+    Preserves Data Unavailable (RISK_UNKNOWN) for missing measurements.
+    Aggregates known hazards correctly: known No Travel or Severe conditions are NEVER
+    hidden by another missing measurement.
+    If only Low-risk weather is known but data is incomplete, final risk is Data Unavailable (never Low).
+    Missing data sets forecast_available=False to prevent safe-travel clearance.
     
     Risk priority:
     No Travel > Severe > High > Moderate > Data Unavailable > Low.
     """
-    if not forecast_available or wind_mph is None or rain_in_hr is None or snow_in_hr is None:
+    is_fully_available = (
+        forecast_available
+        and wind_mph is not None
+        and rain_in_hr is not None
+        and snow_in_hr is not None
+    )
+
+    # 1. Evaluate every available weather measurement independently
+    wind_risk = classify_wind_risk(wind_mph)
+    rain_risk = classify_rain_risk(rain_in_hr)
+    snow_risk = classify_snow_risk(snow_in_hr)
+    
+    # 2. Pure weather risk aggregation
+    weather_risk = get_higher_risk(get_higher_risk(wind_risk, rain_risk), snow_risk)
+
+    # If forecast data is not fully available, missing data must NEVER be classified as Low
+    if not is_fully_available:
+        weather_risk = get_higher_risk(weather_risk, RISK_UNKNOWN)
+    
+    # 3. Load-based adjustment
+    load_rule_risk = apply_load_based_rules(wind_mph, load_weight_lb)
+    
+    if load_rule_risk:
+        final_risk = get_higher_risk(weather_risk, load_rule_risk)
+    else:
+        final_risk = weather_risk
+
+    # 4. If all measurements were None
+    if wind_mph is None and rain_in_hr is None and snow_in_hr is None:
         return {
             "wind_risk": RISK_UNKNOWN,
             "rain_risk": RISK_UNKNOWN,
@@ -173,62 +204,63 @@ def evaluate_checkpoint_risk(
             "weather_risk": RISK_UNKNOWN,
             "load_adjusted_risk": "None",
             "final_risk": RISK_UNKNOWN,
-            "risk_score": 0,
+            "risk_score": RISK_SEVERITY_ORDER[RISK_UNKNOWN],
             "forecast_available": False,
             "reason": "Forecast data unavailable for this checkpoint/time",
         }
-
-    wind_risk = classify_wind_risk(wind_mph)
-    rain_risk = classify_rain_risk(rain_in_hr)
-    snow_risk = classify_snow_risk(snow_in_hr)
-    
-    # Pure weather risk
-    weather_risk = get_higher_risk(get_higher_risk(wind_risk, rain_risk), snow_risk)
-    
-    # Load-based adjustment
-    load_rule_risk = apply_load_based_rules(wind_mph, load_weight_lb)
-    
-    if load_rule_risk:
-        final_risk = get_higher_risk(weather_risk, load_rule_risk)
-    else:
-        final_risk = weather_risk
         
-    # Build explanation reasons
+    # 5. Build explanation reasons
     reasons = []
     if final_risk == RISK_NO_TRAVEL:
-        if wind_mph >= 55.0:
+        if wind_mph is not None and wind_mph >= 55.0:
             reasons.append(f"Excessive wind ({wind_mph:.1f} mph >= 55 mph)")
-        elif 45.0 <= wind_mph < 55.0 and load_weight_lb > 30000:
+        elif wind_mph is not None and 45.0 <= wind_mph < 55.0 and load_weight_lb > 30000:
             reasons.append(f"High wind ({wind_mph:.1f} mph) with heavy load ({load_weight_lb:,.0f} lb > 30,000 lb)")
-        if rain_in_hr > 1.0:
+        if rain_in_hr is not None and rain_in_hr > 1.0:
             reasons.append(f"Extreme rain ({rain_in_hr:.2f} in/hr > 1.00 in/hr)")
-        if snow_in_hr > 3.0:
+        if snow_in_hr is not None and snow_in_hr > 3.0:
             reasons.append(f"Extreme snow ({snow_in_hr:.2f} in/hr > 3.00 in/hr)")
     elif final_risk == RISK_SEVERE:
-        if 35.0 <= wind_mph < 45.0 and load_weight_lb > 40000:
+        if wind_mph is not None and 35.0 <= wind_mph < 45.0 and load_weight_lb > 40000:
             reasons.append(f"Moderate wind ({wind_mph:.1f} mph) with heavy load ({load_weight_lb:,.0f} lb > 40,000 lb)")
-        elif 45.0 <= wind_mph < 55.0:
+        elif wind_mph is not None and 45.0 <= wind_mph < 55.0:
             reasons.append(f"Severe wind ({wind_mph:.1f} mph)")
-        if 0.50 <= rain_in_hr <= 1.00:
+        if rain_in_hr is not None and 0.50 <= rain_in_hr <= 1.00:
             reasons.append(f"Severe rain ({rain_in_hr:.2f} in/hr)")
-        if 2.0 <= snow_in_hr <= 3.0:
+        if snow_in_hr is not None and 2.0 <= snow_in_hr <= 3.0:
             reasons.append(f"Severe snow ({snow_in_hr:.2f} in/hr)")
     elif final_risk == RISK_HIGH:
-        if 35.0 <= wind_mph < 45.0:
+        if wind_mph is not None and 35.0 <= wind_mph < 45.0:
             reasons.append(f"High wind ({wind_mph:.1f} mph)")
-        if 0.25 <= rain_in_hr < 0.50:
+        if rain_in_hr is not None and 0.25 <= rain_in_hr < 0.50:
             reasons.append(f"Heavy rain ({rain_in_hr:.2f} in/hr)")
-        if 1.0 <= snow_in_hr < 2.0:
+        if snow_in_hr is not None and 1.0 <= snow_in_hr < 2.0:
             reasons.append(f"Heavy snow ({snow_in_hr:.2f} in/hr)")
     elif final_risk == RISK_MODERATE:
-        if 25.0 <= wind_mph < 35.0:
+        if wind_mph is not None and 25.0 <= wind_mph < 35.0:
             reasons.append(f"Moderate wind ({wind_mph:.1f} mph)")
-        if 0.10 <= rain_in_hr < 0.25:
+        if rain_in_hr is not None and 0.10 <= rain_in_hr < 0.25:
             reasons.append(f"Moderate rain ({rain_in_hr:.2f} in/hr)")
-        if 0.5 <= snow_in_hr < 1.0:
+        if snow_in_hr is not None and 0.5 <= snow_in_hr < 1.0:
             reasons.append(f"Moderate snow ({snow_in_hr:.2f} in/hr)")
+    elif final_risk == RISK_UNKNOWN:
+        reasons.append("Forecast data unavailable for one or more weather variables")
     else:
         reasons.append("Favorable driving conditions")
+
+    # If partial data is missing, note it in reasons
+    missing_vars = []
+    if wind_mph is None:
+        missing_vars.append("wind")
+    if rain_in_hr is None:
+        missing_vars.append("rain")
+    if snow_in_hr is None:
+        missing_vars.append("snow")
+
+    if not is_fully_available and missing_vars and final_risk != RISK_UNKNOWN:
+        reasons.append(f"Incomplete forecast data (missing {', '.join(missing_vars)})")
+    elif not is_fully_available and final_risk != RISK_UNKNOWN:
+        reasons.append("Incomplete forecast data")
 
     return {
         "wind_risk": wind_risk,
@@ -238,6 +270,6 @@ def evaluate_checkpoint_risk(
         "load_adjusted_risk": load_rule_risk or "None",
         "final_risk": final_risk,
         "risk_score": RISK_SEVERITY_ORDER[final_risk],
-        "forecast_available": True,
+        "forecast_available": is_fully_available,
         "reason": "; ".join(reasons)
     }

@@ -82,3 +82,68 @@ class TestArrivalTimeCalculation:
         # Checkpoint 1 lookup hour should be 14:00 UTC
         assert updated[1]["forecast_lookup_hour"] == "2026-11-24T14:00"
 
+
+class TestDaylightSavingTransitions:
+    """
+    Regression tests for departure dates on either side of a daylight-saving transition.
+    Validates both user_timezone_offset_minutes and timezone-aware ISO strings.
+    """
+
+    def test_summer_vs_winter_timezone_offset(self):
+        # Summer date (US Eastern Daylight Time EDT: UTC-4 -> offset 240 minutes)
+        summer_iso = "2026-07-15T08:00"
+        summer_utc = parse_to_utc_datetime(summer_iso, user_timezone_offset_minutes=240)
+        assert summer_utc.hour == 12  # 08:00 EDT -> 12:00 UTC
+        assert summer_utc.month == 7
+        assert summer_utc.day == 15
+
+        # Winter date (US Eastern Standard Time EST: UTC-5 -> offset 300 minutes)
+        winter_iso = "2026-11-24T08:00"
+        winter_utc = parse_to_utc_datetime(winter_iso, user_timezone_offset_minutes=300)
+        assert winter_utc.hour == 13  # 08:00 EST -> 13:00 UTC
+        assert winter_utc.month == 11
+        assert winter_utc.day == 24
+
+    def test_dst_boundary_dates(self):
+        # In 2026, US DST ends on Sunday, November 1.
+        # Saturday Oct 31, 2026 (EDT, offset 240)
+        pre_dst_iso = "2026-10-31T10:00"
+        pre_dst_utc = parse_to_utc_datetime(pre_dst_iso, user_timezone_offset_minutes=240)
+        assert pre_dst_utc.hour == 14  # 10:00 EDT -> 14:00 UTC
+
+        # Monday Nov 2, 2026 (EST, offset 300)
+        post_dst_iso = "2026-11-02T10:00"
+        post_dst_utc = parse_to_utc_datetime(post_dst_iso, user_timezone_offset_minutes=300)
+        assert post_dst_utc.hour == 15  # 10:00 EST -> 15:00 UTC
+
+    def test_timezone_aware_iso_on_either_side_of_dst(self):
+        # Timezone-aware ISO explicitly embedding -04:00 (EDT)
+        dt_summer = parse_to_utc_datetime("2026-07-15T08:00:00-04:00")
+        assert dt_summer.hour == 12
+        assert dt_summer.tzinfo == timezone.utc
+
+        # Timezone-aware ISO explicitly embedding -05:00 (EST)
+        dt_winter = parse_to_utc_datetime("2026-11-24T08:00:00-05:00")
+        assert dt_winter.hour == 13
+        assert dt_winter.tzinfo == timezone.utc
+
+    def test_checkpoint_etas_across_dst_dates(self):
+        checkpoints = [
+            {"id": "cp_0", "distance_from_origin_miles": 0.0},
+            {"id": "cp_1", "distance_from_origin_miles": 60.0},
+        ]
+        # Summer trip (EDT, offset 240)
+        updated_summer, dep_summer = calculate_checkpoint_etas(
+            checkpoints, "2026-07-15T08:00", 3600.0, 60.0, user_timezone_offset_minutes=240
+        )
+        assert updated_summer[0]["forecast_lookup_hour"] == "2026-07-15T12:00"
+        assert updated_summer[1]["forecast_lookup_hour"] == "2026-07-15T13:00"
+
+        # Winter trip (EST, offset 300)
+        updated_winter, dep_winter = calculate_checkpoint_etas(
+            checkpoints, "2026-11-24T08:00", 3600.0, 60.0, user_timezone_offset_minutes=300
+        )
+        assert updated_winter[0]["forecast_lookup_hour"] == "2026-11-24T13:00"
+        assert updated_winter[1]["forecast_lookup_hour"] == "2026-11-24T14:00"
+
+
