@@ -262,6 +262,8 @@ def evaluate_checkpoint_risk(
     elif not is_fully_available and final_risk != RISK_UNKNOWN:
         reasons.append("Incomplete forecast data")
 
+    has_hazard = final_risk in (RISK_MODERATE, RISK_HIGH, RISK_SEVERE, RISK_NO_TRAVEL)
+
     return {
         "wind_risk": wind_risk,
         "rain_risk": rain_risk,
@@ -271,5 +273,10 @@ def evaluate_checkpoint_risk(
         "final_risk": final_risk,
         "risk_score": RISK_SEVERITY_ORDER[final_risk],
         "forecast_available": is_fully_available,
+        "is_data_complete": is_fully_available,
+        "is_hazard_detected": has_hazard,
+        "known_hazard_level": final_risk if has_hazard else None,
+        "is_partial_hazard": bool(not is_fully_available and has_hazard),
         "reason": "; ".join(reasons)
     }
+

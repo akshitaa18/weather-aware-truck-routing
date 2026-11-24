@@ -100,10 +100,16 @@ export const RouteComparison: React.FC<RouteComparisonProps> = ({
                   <div className="text-[10px] font-semibold text-slate-500">Severe</div>
                   <div
                     className={`font-bold mt-0.5 ${
-                      metrics.severe_risk_miles > 0 ? 'text-red-600' : 'text-slate-700'
+                      metrics.severe_risk_miles > 0 || (metrics.known_hazard_severe_miles && metrics.known_hazard_severe_miles > 0)
+                        ? 'text-red-600'
+                        : 'text-slate-700'
                     }`}
                   >
-                    {metrics.severe_risk_miles} mi
+                    {metrics.severe_risk_miles > 0
+                      ? `${metrics.severe_risk_miles} mi`
+                      : metrics.known_hazard_severe_miles && metrics.known_hazard_severe_miles > 0
+                      ? `${metrics.known_hazard_severe_miles} mi*`
+                      : '0 mi'}
                   </div>
                 </div>
 
@@ -111,10 +117,16 @@ export const RouteComparison: React.FC<RouteComparisonProps> = ({
                   <div className="text-[10px] font-semibold text-slate-500">High Risk</div>
                   <div
                     className={`font-bold mt-0.5 ${
-                      metrics.high_risk_miles > 0 ? 'text-orange-600' : 'text-slate-700'
+                      metrics.high_risk_miles > 0 || (metrics.known_hazard_high_miles && metrics.known_hazard_high_miles > 0)
+                        ? 'text-orange-600'
+                        : 'text-slate-700'
                     }`}
                   >
-                    {metrics.high_risk_miles} mi
+                    {metrics.high_risk_miles > 0
+                      ? `${metrics.high_risk_miles} mi`
+                      : metrics.known_hazard_high_miles && metrics.known_hazard_high_miles > 0
+                      ? `${metrics.known_hazard_high_miles} mi*`
+                      : '0 mi'}
                   </div>
                 </div>
 
@@ -146,9 +158,16 @@ export const RouteComparison: React.FC<RouteComparisonProps> = ({
               {hasMissingData && (
                 <div className="mb-2 p-1.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-medium text-slate-700 flex items-center gap-1">
                   <AlertCircle className="h-3 w-3 shrink-0 text-slate-500" />
-                  <span>{metrics.unknown_risk_miles || 0} mi unforecasted; safety clearance withheld</span>
+                  <span>
+                    {metrics.unknown_risk_miles || 0} mi unforecasted
+                    {metrics.partial_data_hazard_miles && metrics.partial_data_hazard_miles > 0
+                      ? ` (${metrics.partial_data_hazard_miles} mi active hazard detected)`
+                      : ''}
+                    ; safety clearance withheld
+                  </span>
                 </div>
               )}
+
 
               {/* Routing Profile & Commercial Truck Disclosure */}
               {route.profile_disclosure && (

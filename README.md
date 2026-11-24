@@ -316,7 +316,7 @@ Frontend will be active at `http://localhost:5173/`.
 
 ## 10. Running Automated Tests
 
-### Backend Tests (85 Tests)
+### Backend Tests (103 Tests)
 ```bash
 cd backend
 venv\Scripts\pytest -v
@@ -334,7 +334,7 @@ cd frontend
 npm run build
 ```
 
-**Total Automated Test Suite: 103 Automated Tests Passing (100% Success Rate).**
+**Total Automated Test Suite: 121 Automated Tests Passing (100% Success Rate).**
 
 ---
 
@@ -343,11 +343,12 @@ npm run build
 | Requirement | Description | Status | Verification Detail |
 |---|---|---|---|
 | **Rain vs Snow Calculation** | Request separate `rain` and `showers` hourly variables; calculate liquid rain as `rain + showers` (in/hr); snowfall in in/hr. Snowfall alone must not trigger rain risk. | **PASS** | Verified in `weather_provider.py` & `test_weather_provider.py::test_snowfall_alone_does_not_trigger_rain_risk`. |
-| **Missing Weather Handling** | Missing weather preserved as None; never converted to 0.0 or classified as Low. Partial missing weather retains known hazards (e.g. 60 mph wind $\to$ No Travel). Missing data withholds safety clearance. | **PASS** | Verified in `risk_engine.py` & `test_risk_engine.py::TestPartialWeatherEvaluation`. |
-| **Three Distinct Routes** | Generates 3 distinct road routes via OSRM Smart Corridor or ORS HGV. Deduplicates overlapping corridors; re-indexes unique IDs (`route_1, route_2, route_3`). Clear error on failure. | **PASS** | Verified in `routing_provider.py` & `test_routing_provider.py::test_manager_deduplicates_and_reindexes_route_ids`. |
+| **Missing Weather Handling & Accounting** | Missing weather preserved as None; never converted to 0.0 or classified as Low. Partial missing weather retains known hazards (e.g. 60 mph wind $\to$ No Travel). Segments with incomplete weather contribute to `unknown_risk_miles` without being counted as verified Low/Mod/High/Severe exposure. | **PASS** | Verified in `risk_engine.py`, `route_analyzer.py`, and `test_recommendation.py::TestUnknownWeatherMileageAccounting`. |
+| **Three Distinct Routes** | Generates distinct road corridors via OSRM Smart Corridor or ORS HGV. Distance-based polyline sampling rejects duplicate or overlapping geometry even if reported distances differ. Re-indexes unique IDs (`route_1, route_2, route_3`). Clear error on failure. | **PASS** | Verified in `routing_provider.py` & `test_routing_provider.py::test_identical_geometry_with_different_reported_distances_is_rejected_as_duplicate`. |
+| **Fail-Closed Recommendation Eligibility** | Recommendation requires valid metrics, complete atmospheric coverage, zero No Travel miles, and verified road geometry. Disqualifies routes missing required fields. Ranks eligible routes strictly by `(severe, high, avg_score, duration)`. | **PASS** | Verified in `recommendation.py` & `test_recommendation.py::TestFailClosedRecommendationEligibility`. |
+| **Departure Timestamp Validation** | Rejects invalid, empty, or unparseable departure times with clear `ValueError` fail-closed rather than silently falling back to `datetime.now()`. Preserves UTC/local offset conversions. | **PASS** | Verified in `arrival_time.py` & `test_arrival_time.py::TestInvalidDepartureTimestamps`. |
 | **Corridor Orientation** | Geographically accurate corridor labels (Northern vs Southern, Eastern vs Western) based on true coordinate displacement. | **PASS** | Verified in `routing_provider.py` delta calculations. |
 | **Truck Routing Disclosure** | Disclose whether commercial truck height/weight limits are enforced (ORS HGV) or general road geometry (OSRM). | **PASS** | Verified on Route Cards (`profile_disclosure`, `routing_profile`) and in `test_routing_provider.py`. |
-| **Recommendation Engine** | Separates safety eligibility from route ranking. Strictly ranks eligible routes by `(severe, high, avg_score, duration)`. | **PASS** | Verified in `recommendation.py` & `test_recommendation.py::test_strict_four_tuple_ranking_for_eligible_routes`. |
 | **0–48h Forecast Timeline** | Dynamic slider offsets relative to departure time ($T_{\text{dep}} + H$). Dynamic risk recalculation across checkpoints and heatmap segments. | **PASS** | Verified in `heatmap.py` & `ForecastSlider.test.tsx`. |
 | **Geocoding Reliability** | Nominatim $\le 1$ req/sec rate limiting. Graceful fallback on HTTP 429/403. Configurable `GEOCODING_PROVIDER` ('photon' / 'nominatim'). | **PASS** | Verified in `geocoding.py` & `test_geocoding.py::test_nominatim_rate_limiting_enforces_one_sec_delay`. |
 | **Form Inputs & UX** | Empty default inputs on launch (no hardcoded Chicago/Detroit). Auto-analyze on refresh removed. Duplicate-submission guards. | **PASS** | Verified in `RouteForm.tsx` & `Dashboard.tsx` & `RouteForm.test.tsx`. |
@@ -416,5 +417,6 @@ Use this structured script outline when recording the video demonstration for Sp
    - Show the Checkpoint Hazard Inspector table with search and risk filters.
 6. **Codebase & Testing Verification (1 min):**
    - Showcase modular backend service architecture (`routing/services/`).
-   - Highlight the 103 passing automated tests (85 backend Pytest + 18 frontend Vitest).
+   - Highlight the 121 passing automated tests (103 backend Pytest + 18 frontend Vitest).
    - Conclude with production readiness (Docker, Render, Vercel).
+

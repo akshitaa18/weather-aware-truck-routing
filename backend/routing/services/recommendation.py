@@ -16,16 +16,70 @@ from typing import List, Dict, Any, Tuple
 
 def is_route_eligible(route: Dict[str, Any]) -> bool:
     """
-    A route is eligible for safe recommendation if and only if:
-    1. It has 0 miles of No Travel conditions.
-    2. Complete weather forecast data is available (no unknown miles).
-    3. It is a genuine road route (not simulated geometry).
+    Fail-closed safety eligibility validation.
+    
+    A route is eligible for safe recommendation IF AND ONLY IF:
+    1. Route structure is valid and non-empty.
+    2. Route is verified road geometry (is_verified_road_route is True).
+    3. Route is NOT simulated geometry (is_simulated is False).
+    4. Duration is a valid positive number.
+    5. Route contains valid, non-empty metrics.
+    6. Complete weather forecast data is available (has_missing_weather is False and unknown_risk_miles == 0.0).
+    7. Zero miles of No Travel conditions (no_travel_miles == 0.0).
+    8. Route is explicitly cleared as safe for travel (is_safe_for_travel is True).
+    9. Severe and High risk miles and average risk score are valid numbers.
+    
+    Missing, None, or invalid required safety fields strictly disqualify the route.
     """
-    metrics = route.get("metrics", {})
-    no_travel = metrics.get("no_travel_miles", 0.0)
-    has_missing = metrics.get("has_missing_weather", False) or metrics.get("unknown_risk_miles", 0.0) > 0
-    is_simulated = route.get("is_simulated", False)
-    return (no_travel == 0.0) and (not has_missing) and (not is_simulated)
+    if not isinstance(route, dict) or not route:
+        return False
+
+    # 1. Verification of road geometry
+    if route.get("is_simulated") is not False:
+        return False
+    if route.get("is_verified_road_route") is not True:
+        return False
+
+    # 2. Duration check
+    duration = route.get("duration_seconds")
+    if not isinstance(duration, (int, float)) or duration <= 0:
+        return False
+
+    # 3. Metrics validation
+    metrics = route.get("metrics")
+    if not isinstance(metrics, dict) or not metrics:
+        return False
+
+    # 4. Weather completeness
+    if metrics.get("has_missing_weather") is not False:
+        return False
+    unknown_miles = metrics.get("unknown_risk_miles")
+    if not isinstance(unknown_miles, (int, float)) or unknown_miles != 0.0:
+        return False
+
+    # 5. No Travel constraint
+    no_travel = metrics.get("no_travel_miles")
+    if not isinstance(no_travel, (int, float)) or no_travel != 0.0:
+        return False
+
+    # 6. Explicit safety clearance
+    if metrics.get("is_safe_for_travel") is not True:
+        return False
+
+    # 7. Safety risk metrics presence and validity
+    severe = metrics.get("severe_risk_miles")
+    if not isinstance(severe, (int, float)) or severe < 0:
+        return False
+
+    high = metrics.get("high_risk_miles")
+    if not isinstance(high, (int, float)) or high < 0:
+        return False
+
+    avg_score = metrics.get("average_risk_score")
+    if not isinstance(avg_score, (int, float)) or avg_score <= 0:
+        return False
+
+    return True
 
 
 def eligible_route_sort_key(route: Dict[str, Any]) -> Tuple[float, float, float, float]:
@@ -37,10 +91,10 @@ def eligible_route_sort_key(route: Dict[str, Any]) -> Tuple[float, float, float,
     4. Shortest duration (seconds)
     """
     metrics = route.get("metrics", {})
-    severe = metrics.get("severe_risk_miles", 0.0)
-    high = metrics.get("high_risk_miles", 0.0)
-    avg_score = metrics.get("average_risk_score", 1.0)
-    duration = route.get("duration_seconds", 0.0)
+    severe = float(metrics.get("severe_risk_miles", 0.0))
+    high = float(metrics.get("high_risk_miles", 0.0))
+    avg_score = float(metrics.get("average_risk_score", 1.0))
+    duration = float(route.get("duration_seconds", 0.0))
     return (severe, high, avg_score, duration)
 
 
@@ -58,24 +112,29 @@ def presentation_sort_key(route: Dict[str, Any]) -> Tuple[int, int, int, int, fl
         duration_seconds
     )
     """
-    metrics = route.get("metrics", {})
-    no_travel = metrics.get("no_travel_miles", 0.0)
-    has_missing = metrics.get("has_missing_weather", False) or metrics.get("unknown_risk_miles", 0.0) > 0
-    is_simulated = 1 if route.get("is_simulated", False) else 0
+    eligible = is_route_eligible(route)
+    ineligible = 0 if eligible else 1
+
+    metrics = route.get("metrics") if isinstance(route, dict) else {}
+    if not isinstance(metrics, dict):
+        metrics = {}
+
+    no_travel = float(metrics.get("no_travel_miles") or 0.0)
+    has_missing = bool(metrics.get("has_missing_weather", False) or (float(metrics.get("unknown_risk_miles") or 0.0) > 0))
+    is_sim = 1 if route.get("is_simulated", False) else 0
     has_no_travel = 1 if no_travel > 0.0 else 0
     missing_int = 1 if has_missing else 0
-    ineligible = 1 if (has_no_travel or missing_int or is_simulated) else 0
 
-    severe = metrics.get("severe_risk_miles", 0.0)
-    high = metrics.get("high_risk_miles", 0.0)
-    avg_score = metrics.get("average_risk_score", 1.0)
-    duration = route.get("duration_seconds", 0.0)
+    severe = float(metrics.get("severe_risk_miles") or 0.0)
+    high = float(metrics.get("high_risk_miles") or 0.0)
+    avg_score = float(metrics.get("average_risk_score") or 999.0)
+    duration = float(route.get("duration_seconds") or 999999.0)
 
     return (
         ineligible,
         has_no_travel,
         missing_int,
-        is_simulated,
+        is_sim,
         severe,
         high,
         avg_score,

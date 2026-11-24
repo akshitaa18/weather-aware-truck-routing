@@ -22,28 +22,40 @@ def parse_to_utc_datetime(
     - Timezone-aware ISO strings: e.g. '2026-11-24T08:00:00-05:00', '2026-11-24T13:00:00Z'
     - Timezone-naive ISO strings: e.g. '2026-11-24T08:00' with user_timezone_offset_minutes
     - Defaults to UTC if naive and no offset provided, avoiding silent timezone drift.
+
+    Raises:
+    - ValueError: if departure_time_iso is missing, empty, or not a valid ISO 8601 string.
     """
+    if not isinstance(departure_time_iso, str) or not departure_time_iso.strip():
+        raise ValueError(
+            f"Invalid departure time: value must be a non-empty ISO 8601 string (received {departure_time_iso!r})."
+        )
+
     clean_iso = departure_time_iso.strip().replace("Z", "+00:00")
     
     try:
         dt = datetime.fromisoformat(clean_iso)
-        if dt.tzinfo is not None:
-            # Timezone-aware: convert to UTC
-            return dt.astimezone(timezone.utc)
-        
-        # Timezone-naive
-        if user_timezone_offset_minutes is not None:
-            # JavaScript getTimezoneOffset() returns minutes *difference* from UTC:
-            # e.g., US EST (UTC-5) returns +300 minutes.
-            # Local = UTC - offset  =>  Offset from UTC = -user_timezone_offset_minutes
-            tz = timezone(timedelta(minutes=-user_timezone_offset_minutes))
-            dt_with_tz = dt.replace(tzinfo=tz)
-            return dt_with_tz.astimezone(timezone.utc)
-        else:
-            # Fallback convention: treat naive input as UTC
-            return dt.replace(tzinfo=timezone.utc)
-    except Exception:
-        return datetime.now(timezone.utc)
+    except Exception as e:
+        raise ValueError(
+            f"Invalid departure time format '{departure_time_iso}'. Expected valid ISO 8601 string (e.g., '2026-11-24T08:00:00Z')."
+        ) from e
+
+    if dt.tzinfo is not None:
+        # Timezone-aware: convert to UTC
+        return dt.astimezone(timezone.utc)
+    
+    # Timezone-naive
+    if user_timezone_offset_minutes is not None:
+        # JavaScript getTimezoneOffset() returns minutes *difference* from UTC:
+        # e.g., US EST (UTC-5) returns +300 minutes.
+        # Local = UTC - offset  =>  Offset from UTC = -user_timezone_offset_minutes
+        tz = timezone(timedelta(minutes=-user_timezone_offset_minutes))
+        dt_with_tz = dt.replace(tzinfo=tz)
+        return dt_with_tz.astimezone(timezone.utc)
+    else:
+        # Fallback convention: treat naive input as UTC
+        return dt.replace(tzinfo=timezone.utc)
+
 
 
 def calculate_checkpoint_etas(

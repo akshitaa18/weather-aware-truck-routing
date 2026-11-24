@@ -27,7 +27,7 @@ export const RiskDistributionChart: React.FC<RiskDistributionChartProps> = ({ ro
             Corridor Risk Exposure Breakdown (Miles)
           </h3>
           <p className="text-xs text-slate-500">
-            Comparative stacked analysis of weather hazard exposure across alternative driving corridors.
+            Comparative stacked analysis of verified hazard exposure (Low, Moderate, High, Severe, No Travel) and unforecasted corridors (Data Unavailable).
           </p>
         </div>
       </div>

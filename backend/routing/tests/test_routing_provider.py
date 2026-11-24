@@ -64,37 +64,50 @@ class TestMultiSourceRoutingManager:
             assert r["truck_restrictions_enforced"] is False
             assert "Simulated Corridor" in r["profile_disclosure"]
 
-    def test_routes_are_substantially_different_by_distance(self):
+    def test_identical_geometry_with_different_reported_distances_is_rejected_as_duplicate(self):
         from routing.services.routing_provider import routes_are_substantially_different
-        r1 = {"distance_miles": 100.0, "coordinates": [[40.0, -75.0], [41.0, -74.0]]}
-        r2 = {"distance_miles": 110.0, "coordinates": [[40.0, -75.0], [41.0, -74.0]]}
-        assert routes_are_substantially_different(r1, r2) is True
-
-    def test_routes_are_substantially_different_by_intermediate_divergence(self):
-        from routing.services.routing_provider import routes_are_substantially_different
-        # Same distance, but diverging path through different latitude
+        # Identical road coordinates, but different estimated distances (e.g. 100 vs 125 miles)
         r1 = {
             "distance_miles": 100.0,
-            "coordinates": [[40.0, -75.0], [40.2, -75.0], [40.5, -75.0], [41.0, -75.0]]
+            "coordinates": [[40.0, -75.0], [40.3, -74.8], [40.6, -74.5], [41.0, -74.0]]
         }
         r2 = {
-            "distance_miles": 100.0,
-            "coordinates": [[40.0, -75.0], [40.2, -74.5], [40.5, -74.2], [41.0, -75.0]]
+            "distance_miles": 125.0,
+            "coordinates": [[40.0, -75.0], [40.3, -74.8], [40.6, -74.5], [41.0, -74.0]]
         }
-        # Longitude difference at 50% is 0.8 degrees (~40 miles)
-        assert routes_are_substantially_different(r1, r2) is True
+        # Distance difference alone is NOT sufficient; identical geometry must be rejected as duplicate
+        assert routes_are_substantially_different(r1, r2) is False
 
-    def test_identical_routes_are_not_substantially_different(self):
+    def test_substantially_overlapping_routes_with_minor_variation_rejected(self):
         from routing.services.routing_provider import routes_are_substantially_different
+        # Routes share the same highway, diverging by at most 0.02 degrees (~1.2 miles)
         r1 = {
             "distance_miles": 100.0,
-            "coordinates": [[40.0, -75.0], [40.25, -74.8], [40.5, -74.5], [41.0, -74.0]]
+            "coordinates": [[40.0, -75.0], [40.3, -74.8], [40.6, -74.5], [41.0, -74.0]]
         }
         r2 = {
-            "distance_miles": 100.1,
-            "coordinates": [[40.0, -75.0], [40.25, -74.8], [40.5, -74.5], [41.0, -74.0]]
+            "distance_miles": 102.0,
+            "coordinates": [[40.0, -75.0], [40.3, -74.78], [40.6, -74.52], [41.0, -74.0]]
         }
         assert routes_are_substantially_different(r1, r2) is False
+
+    def test_genuinely_distinct_corridors_accepted(self):
+        from routing.services.routing_provider import routes_are_substantially_different
+        # Route 1 takes a southern highway (lat ~40.0), Route 2 takes a northern highway (lat ~40.6)
+        # Divergence is ~40 miles across the corridor
+        r1 = {
+            "distance_miles": 150.0,
+            "coordinates": [
+                [40.0, -75.0], [40.0, -74.5], [40.0, -74.0], [40.0, -73.5], [40.5, -73.0]
+            ]
+        }
+        r2 = {
+            "distance_miles": 160.0,
+            "coordinates": [
+                [40.0, -75.0], [40.6, -74.5], [40.6, -74.0], [40.6, -73.5], [40.5, -73.0]
+            ]
+        }
+        assert routes_are_substantially_different(r1, r2) is True
 
     @patch.object(OpenRouteServiceProvider, "get_three_routes")
     @patch.object(OSRMProvider, "get_three_routes")

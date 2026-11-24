@@ -15,7 +15,7 @@ from requests.adapters import HTTPAdapter
 from typing import List, Dict, Any, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 
-from .checkpoint_generator import haversine_distance_miles
+from .checkpoint_generator import haversine_distance_miles, compute_cumulative_distances
 
 logger = logging.getLogger(__name__)
 
@@ -28,33 +28,89 @@ _ROUTING_SESSION.mount("https://", _ROUTING_ADAPTER)
 _ROUTING_SESSION.mount("http://", _ROUTING_ADAPTER)
 
 
+def sample_polyline_by_distance(
+    coordinates: List[List[float]], num_samples: int = 25
+) -> List[Tuple[float, float]]:
+    """
+    Sample points along a polyline at regular distance intervals from 0% to 100% of physical distance.
+    Uses linear interpolation between adjacent polyline vertices based on cumulative distance.
+    """
+    if not coordinates:
+        return []
+    if len(coordinates) == 1:
+        return [(float(coordinates[0][0]), float(coordinates[0][1]))]
+
+    tuple_coords = [(float(c[0]), float(c[1])) for c in coordinates]
+    cum_dist = compute_cumulative_distances(tuple_coords)
+    total_len = cum_dist[-1]
+    if total_len <= 0.0:
+        return [(tuple_coords[0][0], tuple_coords[0][1])] * num_samples
+
+    samples: List[Tuple[float, float]] = []
+    coord_idx = 0
+    n_coords = len(tuple_coords)
+
+    for i in range(num_samples):
+        target = (i / float(num_samples - 1)) * total_len
+        while coord_idx < n_coords - 2 and cum_dist[coord_idx + 1] < target:
+            coord_idx += 1
+
+        seg_start = cum_dist[coord_idx]
+        seg_end = cum_dist[coord_idx + 1]
+        seg_len = seg_end - seg_start
+
+        if seg_len > 0:
+            frac = (target - seg_start) / seg_len
+            frac = max(0.0, min(1.0, frac))
+            p1 = tuple_coords[coord_idx]
+            p2 = tuple_coords[coord_idx + 1]
+            lat = p1[0] + frac * (p2[0] - p1[0])
+            lon = p1[1] + frac * (p2[1] - p1[1])
+            samples.append((round(lat, 6), round(lon, 6)))
+        else:
+            samples.append((tuple_coords[coord_idx][0], tuple_coords[coord_idx][1]))
+
+    return samples
+
+
 def routes_are_substantially_different(r1: Dict[str, Any], r2: Dict[str, Any]) -> bool:
     """
-    Check if two routes follow substantially distinct driving corridors.
-    Routes are considered distinct if:
-    1. Their distance differs by more than 5 miles or 3%, OR
-    2. Any intermediate checkpoint / coordinate along the path diverges by > 10 miles.
+    Check if two routes follow substantially distinct driving corridors based on actual geometry.
+    
+    Distance difference alone is NEVER sufficient to declare two routes distinct.
+    Compares the geometry using distance-based sampling along the complete polylines.
+    Rejects identical or substantially overlapping routes as duplicates, even if reported distances differ.
+    
+    Threshold:
+    Requires maximum cross-track deviation between sampled paths of at least 8.0 miles.
     """
-    d1 = r1.get("distance_miles", 0.0)
-    d2 = r2.get("distance_miles", 0.0)
-    if abs(d1 - d2) > 5.0 or (max(d1, d2) > 0 and abs(d1 - d2) / max(d1, d2) > 0.03):
-        return True
-
     coords1 = r1.get("coordinates", [])
     coords2 = r2.get("coordinates", [])
-    if not coords1 or not coords2:
+    if not coords1 or not coords2 or len(coords1) < 2 or len(coords2) < 2:
         return False
 
-    # Check divergence at 25%, 50%, and 75% along the polylines
-    for frac in (0.25, 0.50, 0.75):
-        idx1 = min(int(len(coords1) * frac), len(coords1) - 1)
-        idx2 = min(int(len(coords2) * frac), len(coords2) - 1)
-        lat1, lon1 = coords1[idx1]
-        lat2, lon2 = coords2[idx2]
-        if haversine_distance_miles(lat1, lon1, lat2, lon2) > 10.0:
-            return True
+    # Sample both polylines at 25 regular distance intervals along the entire path
+    samples1 = sample_polyline_by_distance(coords1, num_samples=25)
+    samples2 = sample_polyline_by_distance(coords2, num_samples=25)
 
-    return False
+    if not samples1 or not samples2:
+        return False
+
+    # dev1: maximum distance from any sample on route 1 to the closest sample on route 2
+    dev1 = max(
+        min(haversine_distance_miles(p1[0], p1[1], p2[0], p2[1]) for p2 in samples2)
+        for p1 in samples1
+    )
+    # dev2: maximum distance from any sample on route 2 to the closest sample on route 1
+    dev2 = max(
+        min(haversine_distance_miles(p2[0], p2[1], p1[0], p1[1]) for p1 in samples1)
+        for p2 in samples2
+    )
+
+    max_deviation = max(dev1, dev2)
+
+    # Routes must diverge by at least 8.0 miles across the corridor to be distinct alternatives
+    return max_deviation >= 8.0
 
 
 def format_duration(seconds: float) -> str:

@@ -147,3 +147,36 @@ class TestDaylightSavingTransitions:
         assert updated_winter[1]["forecast_lookup_hour"] == "2026-11-24T14:00"
 
 
+class TestInvalidDepartureTimestamps:
+    """
+    Regression tests verifying that invalid, empty, or unparseable departure times
+    raise ValueError fail-closed instead of silently defaulting to datetime.now().
+    """
+
+    def test_empty_string_raises_value_error(self):
+        with pytest.raises(ValueError, match="non-empty ISO 8601 string"):
+            parse_to_utc_datetime("")
+
+    def test_whitespace_string_raises_value_error(self):
+        with pytest.raises(ValueError, match="non-empty ISO 8601 string"):
+            parse_to_utc_datetime("   ")
+
+    def test_none_value_raises_value_error(self):
+        with pytest.raises(ValueError, match="non-empty ISO 8601 string"):
+            parse_to_utc_datetime(None)  # type: ignore
+
+    def test_malformed_string_raises_value_error(self):
+        with pytest.raises(ValueError, match="Invalid departure time format"):
+            parse_to_utc_datetime("not-a-valid-timestamp")
+
+    def test_out_of_range_calendar_values_raise_value_error(self):
+        with pytest.raises(ValueError, match="Invalid departure time format"):
+            parse_to_utc_datetime("2026-13-45T25:99:00Z")
+
+    def test_calculate_checkpoint_etas_propagates_value_error(self):
+        checkpoints = [{"id": "cp_0", "distance_from_origin_miles": 0.0}]
+        with pytest.raises(ValueError, match="Invalid departure time format"):
+            calculate_checkpoint_etas(checkpoints, "invalid-timestamp", 3600.0, 50.0)
+
+
+

@@ -67,6 +67,14 @@ export interface RouteMetrics {
   severe_risk_miles: number;
   no_travel_miles: number;
   unknown_risk_miles: number;
+  verified_low_risk_miles?: number;
+  verified_moderate_risk_miles?: number;
+  verified_high_risk_miles?: number;
+  verified_severe_risk_miles?: number;
+  known_hazard_severe_miles?: number;
+  known_hazard_high_miles?: number;
+  known_hazard_moderate_miles?: number;
+  partial_data_hazard_miles?: number;
   has_missing_weather: boolean;
   average_risk_score: number;
   overall_route_risk: RiskLevel;
@@ -74,6 +82,7 @@ export interface RouteMetrics {
   checkpoint_count: number;
   segments: RouteSegment[];
 }
+
 
 export interface DynamicHourlyCheckpoint {
   id: string;
