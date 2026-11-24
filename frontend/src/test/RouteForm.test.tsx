@@ -45,10 +45,36 @@ describe('RouteForm Component', () => {
     expect(handleSubmit).not.toHaveBeenCalled();
     expect(screen.getByText(/Origin and destination must be different cities/i)).toBeInTheDocument();
   });
+  it('renders empty origin and destination fields by default with helpful placeholders', () => {
+    const handleSubmit = vi.fn();
+    render(<RouteForm onSubmit={handleSubmit} isLoading={false} />);
+
+    const originInput = screen.getByPlaceholderText(/Enter origin city/i) as HTMLInputElement;
+    const destInput = screen.getByPlaceholderText(/Enter destination city/i) as HTMLInputElement;
+
+    expect(originInput.value).toBe('');
+    expect(destInput.value).toBe('');
+  });
+
+  it('prevents submission when origin or destination is empty', () => {
+    const handleSubmit = vi.fn();
+    render(<RouteForm onSubmit={handleSubmit} isLoading={false} />);
+
+    const submitBtn = screen.getByText('Analyze Alternative Routes');
+    fireEvent.click(submitBtn);
+
+    expect(handleSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(/Please enter a valid trip origin/i)).toBeInTheDocument();
+  });
 
   it('submits form payload including timezone_offset_minutes', () => {
     const handleSubmit = vi.fn();
     render(<RouteForm onSubmit={handleSubmit} isLoading={false} />);
+
+    const originInput = screen.getByPlaceholderText(/Enter origin city/i);
+    const destInput = screen.getByPlaceholderText(/Enter destination city/i);
+    fireEvent.change(originInput, { target: { value: 'Chicago, IL' } });
+    fireEvent.change(destInput, { target: { value: 'Detroit, MI' } });
 
     const submitBtn = screen.getByText('Analyze Alternative Routes');
     fireEvent.click(submitBtn);
@@ -68,6 +94,11 @@ describe('RouteForm Component', () => {
     const handleSubmit = vi.fn();
     const { container } = render(<RouteForm onSubmit={handleSubmit} isLoading={false} />);
 
+    const originInput = screen.getByPlaceholderText(/Enter origin city/i);
+    const destInput = screen.getByPlaceholderText(/Enter destination city/i);
+    fireEvent.change(originInput, { target: { value: 'Chicago, IL' } });
+    fireEvent.change(destInput, { target: { value: 'Detroit, MI' } });
+
     const dateInput = container.querySelector('input[type="datetime-local"]') as HTMLInputElement;
     expect(dateInput).not.toBeNull();
 
@@ -80,6 +111,8 @@ describe('RouteForm Component', () => {
     const expectedOffset = new Date(testDeparture).getTimezoneOffset();
     expect(handleSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
+        origin: 'Chicago, IL',
+        destination: 'Detroit, MI',
         departure_time: testDeparture,
         timezone_offset_minutes: expectedOffset,
       })
@@ -89,6 +122,12 @@ describe('RouteForm Component', () => {
   it('submits correct timezone offset for departure dates across daylight-saving time transitions', () => {
     const handleSubmit = vi.fn();
     const { container } = render(<RouteForm onSubmit={handleSubmit} isLoading={false} />);
+
+    const originInput = screen.getByPlaceholderText(/Enter origin city/i);
+    const destInput = screen.getByPlaceholderText(/Enter destination city/i);
+    fireEvent.change(originInput, { target: { value: 'Chicago, IL' } });
+    fireEvent.change(destInput, { target: { value: 'Detroit, MI' } });
+
     const dateInput = container.querySelector('input[type="datetime-local"]') as HTMLInputElement;
     const submitBtn = screen.getByText('Analyze Alternative Routes');
 

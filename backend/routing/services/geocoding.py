@@ -5,10 +5,21 @@ Resolves address and city queries into geographic coordinates (lat, lon)
 using OpenStreetMap Nominatim with Photon fallback. No API key required.
 """
 
+import logging
 import requests
-from typing import Dict, Any, Optional
+from requests.adapters import HTTPAdapter
+from typing import Dict, Any, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger(__name__)
 
 _GEOCODE_CACHE: Dict[str, Dict[str, Any]] = {}
+
+# Reusable HTTP session with connection pooling
+_SESSION = requests.Session()
+_ADAPTER = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=1)
+_SESSION.mount("https://", _ADAPTER)
+_SESSION.mount("http://", _ADAPTER)
 
 
 def geocode_location(query: str) -> Dict[str, Any]:
@@ -45,7 +56,7 @@ def geocode_location(query: str) -> Dict[str, Any]:
     }
 
     try:
-        resp = requests.get(
+        resp = _SESSION.get(
             "https://nominatim.openstreetmap.org/search",
             params=params,
             headers=headers,
@@ -64,12 +75,12 @@ def geocode_location(query: str) -> Dict[str, Any]:
                 _GEOCODE_CACHE[cache_k] = result
                 return result
     except Exception as e:
-        print(f"Nominatim geocode failed for '{clean_query}': {e}")
+        logger.warning("Nominatim geocode failed for '%s': %s", clean_query, e)
 
     # Fallback: Photon API (Komoot OpenStreetMap search)
     try:
         photon_url = f"https://photon.komoot.io/api/?q={requests.utils.quote(clean_query)}&limit=1"
-        resp = requests.get(photon_url, timeout=8)
+        resp = _SESSION.get(photon_url, timeout=8)
         if resp.status_code == 200:
             data = resp.json()
             features = data.get("features", [])
@@ -94,6 +105,27 @@ def geocode_location(query: str) -> Dict[str, Any]:
                     _GEOCODE_CACHE[cache_k] = result
                     return result
     except Exception as e:
-        print(f"Photon fallback geocode failed for '{clean_query}': {e}")
+        logger.warning("Photon fallback geocode failed for '%s': %s", clean_query, e)
 
     raise ValueError(f"Unable to geocode location '{clean_query}'. Please check spelling or provide city and state.")
+
+
+def geocode_locations_concurrent(origin_query: str, dest_query: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    Geocode origin and destination locations concurrently when uncached
+    to minimize user wait time during route planning.
+    """
+    cache_orig = origin_query.strip().lower()
+    cache_dest = dest_query.strip().lower()
+
+    if cache_orig in _GEOCODE_CACHE and cache_dest in _GEOCODE_CACHE:
+        return _GEOCODE_CACHE[cache_orig], _GEOCODE_CACHE[cache_dest]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        fut_orig = executor.submit(geocode_location, origin_query)
+        fut_dest = executor.submit(geocode_location, dest_query)
+        origin_res = fut_orig.result()
+        dest_res = fut_dest.result()
+
+    return origin_res, dest_res
+

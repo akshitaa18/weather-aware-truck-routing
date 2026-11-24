@@ -2,7 +2,7 @@
 Routing Services Package.
 """
 
-from .geocoding import geocode_location
+from .geocoding import geocode_location, geocode_locations_concurrent
 from .routing_provider import routing_manager
 from .checkpoint_generator import generate_checkpoints
 from .arrival_time import calculate_checkpoint_etas
@@ -20,6 +20,7 @@ from .route_orchestrator import analyze_weather_truck_routes
 
 __all__ = [
     "geocode_location",
+    "geocode_locations_concurrent",
     "routing_manager",
     "generate_checkpoints",
     "calculate_checkpoint_etas",

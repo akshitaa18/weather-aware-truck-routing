@@ -9,10 +9,21 @@ Supports:
 
 import os
 import math
+import logging
 import requests
+from requests.adapters import HTTPAdapter
 from typing import List, Dict, Any, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger(__name__)
 
 METERS_TO_MILES = 0.000621371
+
+# Reusable HTTP session with connection pooling for routing requests
+_ROUTING_SESSION = requests.Session()
+_ROUTING_ADAPTER = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=1)
+_ROUTING_SESSION.mount("https://", _ROUTING_ADAPTER)
+_ROUTING_SESSION.mount("http://", _ROUTING_ADAPTER)
 
 
 def format_duration(seconds: float) -> str:
@@ -126,7 +137,7 @@ class OpenRouteServiceProvider(RoutingProvider):
                     })
                 return routes
         except Exception as e:
-            print(f"OpenRouteService query failed: {e}")
+            logger.warning("OpenRouteService query failed: %s", e)
         return []
 
 
@@ -152,7 +163,7 @@ class OSRMProvider(RoutingProvider):
         # 1. First query OSRM with alternatives=true
         try:
             url = f"{self.BASE_URL}/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson&alternatives=true&steps=true"
-            resp = requests.get(url, timeout=7)
+            resp = _ROUTING_SESSION.get(url, timeout=7)
             if resp.status_code == 200:
                 data = resp.json()
                 raw_routes = data.get("routes", [])
@@ -183,9 +194,9 @@ class OSRMProvider(RoutingProvider):
                         "is_verified_road_route": True,
                     })
         except Exception as e:
-            print(f"OSRM initial query error: {e}")
+            logger.warning("OSRM initial query error: %s", e)
 
-        # If we have fewer than 3 routes, query intermediate corridor waypoints through OSRM
+        # If we have fewer than 3 routes, query intermediate corridor waypoints through OSRM concurrently
         if len(routes) < 3:
             needed = 3 - len(routes)
             mid_lat = (lat1 + lat2) / 2.0
@@ -198,17 +209,15 @@ class OSRMProvider(RoutingProvider):
             perp_lat = -d_lon / length
             perp_lon = d_lat / length
             
-            offset_multipliers = [0.85, -0.85] if needed == 2 else [0.85]
-            
-            for m in offset_multipliers:
-                if len(routes) >= 3:
-                    break
+            offset_multipliers = [0.85, -0.85] if needed >= 2 else [0.85]
+
+            def fetch_via_corridor(m: float) -> Optional[Dict[str, Any]]:
                 via_lat = round(mid_lat + m * perp_lat, 4)
                 via_lon = round(mid_lon + m * perp_lon, 4)
-                
+                corridor_tag = "Northern Corridor" if m > 0 else "Southern Corridor"
                 try:
                     via_url = f"{self.BASE_URL}/{lon1},{lat1};{via_lon},{via_lat};{lon2},{lat2}?overview=full&geometries=geojson&steps=true"
-                    via_resp = requests.get(via_url, timeout=7)
+                    via_resp = _ROUTING_SESSION.get(via_url, timeout=7)
                     if via_resp.status_code == 200:
                         via_data = via_resp.json()
                         v_routes = via_data.get("routes", [])
@@ -222,11 +231,8 @@ class OSRMProvider(RoutingProvider):
                             steps = []
                             for leg in r.get("legs", []):
                                 steps.extend(leg.get("steps", []))
-                            corridor_tag = "Northern Corridor" if m > 0 else "Southern Corridor"
                             name = extract_route_name(steps, f"{corridor_tag} Route")
-                            
-                            routes.append({
-                                "id": f"route_{len(routes) + 1}",
+                            return {
                                 "name": f"{corridor_tag} ({name})",
                                 "distance_miles": round(dist_meters * METERS_TO_MILES, 1),
                                 "duration_seconds": round(dur_secs, 1),
@@ -239,9 +245,18 @@ class OSRMProvider(RoutingProvider):
                                 "provider": f"OSRM ({corridor_tag})",
                                 "is_simulated": False,
                                 "is_verified_road_route": True,
-                            })
+                            }
                 except Exception as ex:
-                    print(f"OSRM waypoint route error: {ex}")
+                    logger.warning("OSRM waypoint route error: %s", ex)
+                return None
+
+            with ThreadPoolExecutor(max_workers=min(len(offset_multipliers), 2)) as executor:
+                corridor_results = list(executor.map(fetch_via_corridor, offset_multipliers))
+
+            for res in corridor_results:
+                if res and len(routes) < 3:
+                    res["id"] = f"route_{len(routes) + 1}"
+                    routes.append(res)
 
         return routes[:3]
 
@@ -360,7 +375,7 @@ class MultiSourceRoutingManager:
 
         # 3. If real routing failed completely:
         if allow_simulated_fallback:
-            print("Routing service unavailable. Returning explicitly labeled simulated corridors for demonstration.")
+            logger.info("Routing service unavailable. Returning explicitly labeled simulated corridors for demonstration.")
             return self.fallback_provider.get_three_routes(
                 origin_coords, destination_coords, origin_name, destination_name
             )

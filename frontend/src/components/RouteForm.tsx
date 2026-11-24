@@ -30,8 +30,8 @@ export const RouteForm: React.FC<RouteFormProps> = ({ onSubmit, isLoading }) => 
     return new Date(now.getTime() - tzOffset).toISOString().slice(0, 16);
   };
 
-  const [origin, setOrigin] = useState<string>('Chicago, IL');
-  const [destination, setDestination] = useState<string>('Detroit, MI');
+  const [origin, setOrigin] = useState<string>('');
+  const [destination, setDestination] = useState<string>('');
   const [departureTime, setDepartureTime] = useState<string>(getInitialDateTime());
   const [loadWeight, setLoadWeight] = useState<number>(38000);
   const [samplingInterval, setSamplingInterval] = useState<SamplingInterval>(25);
@@ -119,7 +119,7 @@ export const RouteForm: React.FC<RouteFormProps> = ({ onSubmit, isLoading }) => 
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {/* Origin & Destination */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -134,7 +134,7 @@ export const RouteForm: React.FC<RouteFormProps> = ({ onSubmit, isLoading }) => 
                 type="text"
                 value={origin}
                 onChange={(e) => setOrigin(e.target.value)}
-                placeholder="e.g. Chicago, IL or City, State"
+                placeholder="Enter origin city (e.g. Chicago, IL)"
                 required
                 className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-slate-900 transition-all font-medium"
               />
@@ -153,7 +153,7 @@ export const RouteForm: React.FC<RouteFormProps> = ({ onSubmit, isLoading }) => 
                 type="text"
                 value={destination}
                 onChange={(e) => setDestination(e.target.value)}
-                placeholder="e.g. Detroit, MI or City, State"
+                placeholder="Enter destination city (e.g. Detroit, MI)"
                 required
                 className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white text-slate-900 transition-all font-medium"
               />

@@ -151,3 +151,54 @@ class TestOpenMeteoWeatherProvider:
         assert cp["snow_intensity_in_hr"] == 0.0
         assert cp["forecast_available"] is True
         assert cp["hourly_timeline"][0]["forecast_available"] is True
+
+    def test_ttl_cache_expiration_and_retrieval(self):
+        import time
+        from routing.services.weather_provider import get_cached_weather
+
+        lat, lon = 40.0, -75.0
+        ck = cache_key(lat, lon)
+
+        # Fresh cache entry
+        _WEATHER_CACHE[ck] = {
+            "data": {"time": ["2026-11-24T08:00"], "windspeed_10m": [12.0]},
+            "timestamp": time.time(),
+        }
+        assert get_cached_weather(ck) is not None
+        assert get_cached_weather(ck)["windspeed_10m"] == [12.0]
+
+        # Expired cache entry (older than 900 seconds)
+        _WEATHER_CACHE[ck] = {
+            "data": {"time": ["2026-11-24T08:00"], "windspeed_10m": [12.0]},
+            "timestamp": time.time() - 950,
+        }
+        assert get_cached_weather(ck) is None
+        assert ck not in _WEATHER_CACHE
+
+    @patch.object(OpenMeteoWeatherProvider, "_fetch_batch")
+    def test_prefetch_weather_for_multiple_routes_deduplicates(self, mock_fetch):
+        # 3 routes sharing the origin and destination coordinates
+        common_origin = (41.8781, -87.6298)
+        common_dest = (42.3314, -83.0458)
+        waypoint_1 = (41.9, -86.0)
+        waypoint_2 = (42.0, -85.0)
+
+        route_1_cps = [
+            {"id": "r1_cp0", "latitude": common_origin[0], "longitude": common_origin[1]},
+            {"id": "r1_cp1", "latitude": waypoint_1[0], "longitude": waypoint_1[1]},
+            {"id": "r1_cp2", "latitude": common_dest[0], "longitude": common_dest[1]},
+        ]
+        route_2_cps = [
+            {"id": "r2_cp0", "latitude": common_origin[0], "longitude": common_origin[1]},
+            {"id": "r2_cp1", "latitude": waypoint_2[0], "longitude": waypoint_2[1]},
+            {"id": "r2_cp2", "latitude": common_dest[0], "longitude": common_dest[1]},
+        ]
+
+        provider = OpenMeteoWeatherProvider()
+        provider.prefetch_weather_for_multiple_routes([route_1_cps, route_2_cps])
+
+        # Total 6 checkpoints, but only 4 unique coordinates
+        assert mock_fetch.call_count == 1
+        fetched_coords = mock_fetch.call_args[0][0]
+        assert len(fetched_coords) == 4
+

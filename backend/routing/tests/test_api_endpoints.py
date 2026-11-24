@@ -92,3 +92,24 @@ class TestAPIEndpoints:
         }
         resp = client.post('/api/routes/analyze/', payload, format='json')
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_analyze_validation_empty_origin_and_destination(self, client):
+        payload = {
+            "origin": "   ",
+            "destination": "",
+            "departure_time": "2026-11-24T08:00",
+            "load_weight_lb": 35000.0,
+            "sampling_interval_miles": 25,
+        }
+        resp = client.post('/api/routes/analyze/', payload, format='json')
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_concurrent_geocoding_service(self):
+        from routing.services.geocoding import geocode_locations_concurrent, _GEOCODE_CACHE
+        _GEOCODE_CACHE["chicago, il"] = {"name": "Chicago, IL", "latitude": 41.8781, "longitude": -87.6298}
+        _GEOCODE_CACHE["detroit, mi"] = {"name": "Detroit, MI", "latitude": 42.3314, "longitude": -83.0458}
+
+        orig, dest = geocode_locations_concurrent("Chicago, IL", "Detroit, MI")
+        assert orig["latitude"] == 41.8781
+        assert dest["latitude"] == 42.3314
+

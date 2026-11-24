@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Header } from '../components/Header';
 import { RouteForm } from '../components/RouteForm';
 import { RecommendationBanner } from '../components/RecommendationBanner';
@@ -10,7 +10,7 @@ import { RiskDistributionChart } from '../components/RiskDistributionChart';
 import { RiskLegend } from '../components/RiskLegend';
 import { analyzeRoutes } from '../services/api';
 import type { AnalyzeRoutesRequest, AnalyzeRoutesResponse } from '../types';
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, RefreshCw, Navigation } from 'lucide-react';
 
 export const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -19,19 +19,8 @@ export const Dashboard: React.FC = () => {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [forecastOffsetHours, setForecastOffsetHours] = useState<number>(0);
 
-  // Initial load: automatically analyze default corridor (Chicago to Detroit)
-  useEffect(() => {
-    const initialRequest: AnalyzeRoutesRequest = {
-      origin: 'Chicago, IL',
-      destination: 'Detroit, MI',
-      departure_time: new Date().toISOString().slice(0, 16),
-      load_weight_lb: 38000,
-      sampling_interval_miles: 25,
-    };
-    handleAnalyze(initialRequest);
-  }, []);
-
   const handleAnalyze = async (req: AnalyzeRoutesRequest) => {
+    if (isLoading) return; // Prevent duplicate requests
     setIsLoading(true);
     setError(null);
     try {
@@ -87,6 +76,27 @@ export const Dashboard: React.FC = () => {
             <p className="text-xs text-slate-500 max-w-md mx-auto">
               Calculating 3 alternative driving corridors, interpolating checkpoint arrival times, and applying gross vehicle weight hazard rules.
             </p>
+          </div>
+        )}
+
+        {/* Welcome Empty State */}
+        {!analysisResult && !isLoading && !error && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-12 text-center space-y-4 shadow-xs">
+            <div className="inline-flex p-3 rounded-2xl bg-blue-50 text-blue-600 mb-1">
+              <Navigation className="h-8 w-8" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800">
+              Weather-Aware Corridor Planning Ready
+            </h3>
+            <p className="text-sm text-slate-500 max-w-lg mx-auto">
+              Enter your trip origin and destination above, select truck load weight and departure time, then click <strong className="text-slate-700">"Analyze Alternative Routes"</strong>. The system will evaluate alternative road corridors against real-time Open-Meteo forecasts and truck rollover risk rules.
+            </p>
+            <div className="pt-2 flex flex-wrap justify-center gap-2 text-xs text-slate-500">
+              <span className="px-3 py-1 rounded-full bg-slate-100 font-medium">3 Highway Alternatives</span>
+              <span className="px-3 py-1 rounded-full bg-slate-100 font-medium">Gross Weight Rollover Rules</span>
+              <span className="px-3 py-1 rounded-full bg-slate-100 font-medium">0–48h Forecast Timeline</span>
+              <span className="px-3 py-1 rounded-full bg-slate-100 font-medium">Severe Miles Minimization</span>
+            </div>
           </div>
         )}
 
