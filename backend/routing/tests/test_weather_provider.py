@@ -202,3 +202,101 @@ class TestOpenMeteoWeatherProvider:
         fetched_coords = mock_fetch.call_args[0][0]
         assert len(fetched_coords) == 4
 
+    @patch.object(OpenMeteoWeatherProvider, "_fetch_batch")
+    def test_snowfall_alone_does_not_trigger_rain_risk(self, mock_fetch):
+        # Heavy snow (2.5 in/hr), no rain or showers (0.0)
+        lat, lon = 41.8781, -87.6298
+        ck = cache_key(lat, lon)
+
+        base_dt = datetime(2026, 11, 24, 8, 0, tzinfo=timezone.utc)
+        times = [(base_dt + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00") for i in range(49)]
+
+        _WEATHER_CACHE[ck] = {
+            "time": times,
+            "windspeed_10m": [12.0] * len(times),
+            "rain": [0.0] * len(times),
+            "showers": [0.0] * len(times),
+            "snowfall": [2.5] * len(times),
+            "temperature_2m": [-2.0] * len(times),
+        }
+
+        provider = OpenMeteoWeatherProvider()
+        checkpoints = [
+            {
+                "id": "cp_snow",
+                "latitude": lat,
+                "longitude": lon,
+                "forecast_lookup_hour": "2026-11-24T08:00",
+            }
+        ]
+
+        enriched = provider.fetch_weather_for_checkpoints(
+            checkpoints=checkpoints,
+            departure_time_utc_iso="2026-11-24T08:00:00+00:00",
+        )
+
+        cp = enriched[0]
+        # Liquid rain must be 0.0, NOT elevated by snow!
+        assert cp["rain_intensity_in_hr"] == 0.0
+        assert cp["snow_intensity_in_hr"] == 2.5
+        assert cp["forecast_available"] is True
+
+        # Now evaluate risk
+        from routing.services.risk_engine import evaluate_checkpoint_risk, RISK_LOW, RISK_SEVERE
+        risk = evaluate_checkpoint_risk(
+            cp["wind_speed_mph"],
+            cp["rain_intensity_in_hr"],
+            cp["snow_intensity_in_hr"],
+            30000.0,
+            forecast_available=cp["forecast_available"]
+        )
+        assert risk["rain_risk"] == RISK_LOW  # Rain risk is Low!
+        assert risk["snow_risk"] == RISK_SEVERE  # Snow risk is Severe
+        assert risk["final_risk"] == RISK_SEVERE
+
+    @patch.object(OpenMeteoWeatherProvider, "_fetch_batch")
+    def test_liquid_rain_sums_rain_and_showers(self, mock_fetch):
+        # rain=0.35, showers=0.25 -> total liquid rain = 0.60 in/hr (Severe)
+        lat, lon = 41.8781, -87.6298
+        ck = cache_key(lat, lon)
+
+        base_dt = datetime(2026, 11, 24, 8, 0, tzinfo=timezone.utc)
+        times = [(base_dt + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00") for i in range(49)]
+
+        _WEATHER_CACHE[ck] = {
+            "time": times,
+            "windspeed_10m": [10.0] * len(times),
+            "rain": [0.35] * len(times),
+            "showers": [0.25] * len(times),
+            "snowfall": [0.0] * len(times),
+            "temperature_2m": [15.0] * len(times),
+        }
+
+        provider = OpenMeteoWeatherProvider()
+        checkpoints = [
+            {
+                "id": "cp_rain_sum",
+                "latitude": lat,
+                "longitude": lon,
+                "forecast_lookup_hour": "2026-11-24T08:00",
+            }
+        ]
+
+        enriched = provider.fetch_weather_for_checkpoints(
+            checkpoints=checkpoints,
+            departure_time_utc_iso="2026-11-24T08:00:00+00:00",
+        )
+
+        cp = enriched[0]
+        assert cp["rain_intensity_in_hr"] == 0.60
+        assert cp["snow_intensity_in_hr"] == 0.0
+
+        from routing.services.risk_engine import evaluate_checkpoint_risk, RISK_SEVERE
+        risk = evaluate_checkpoint_risk(
+            cp["wind_speed_mph"],
+            cp["rain_intensity_in_hr"],
+            cp["snow_intensity_in_hr"],
+            30000.0,
+        )
+        assert risk["rain_risk"] == RISK_SEVERE
+

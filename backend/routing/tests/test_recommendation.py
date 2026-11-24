@@ -297,4 +297,29 @@ class TestLexicographicalRecommendation:
         assert rec["is_any_safe"] is False
         assert "SAFETY CLEARANCE WITHHELD" in rec["explanation"]
 
+    def test_strict_four_tuple_ranking_for_eligible_routes(self):
+        # 3 eligible routes:
+        # Route 1: severe=0, high=10, avg=1.8, dur=10000
+        # Route 2: severe=0, high=10, avg=1.5, dur=12000 (wins on avg_score)
+        # Route 3: severe=5, high=0,  avg=1.2, dur=8000  (loses on severe)
+        r1 = {
+            "id": "r1", "name": "R1", "duration_seconds": 10000.0, "distance_miles": 200.0,
+            "metrics": {"severe_risk_miles": 0.0, "high_risk_miles": 10.0, "no_travel_miles": 0.0, "unknown_risk_miles": 0.0, "has_missing_weather": False, "average_risk_score": 1.8}
+        }
+        r2 = {
+            "id": "r2", "name": "R2", "duration_seconds": 12000.0, "distance_miles": 210.0,
+            "metrics": {"severe_risk_miles": 0.0, "high_risk_miles": 10.0, "no_travel_miles": 0.0, "unknown_risk_miles": 0.0, "has_missing_weather": False, "average_risk_score": 1.5}
+        }
+        r3 = {
+            "id": "r3", "name": "R3", "duration_seconds": 8000.0, "distance_miles": 190.0,
+            "metrics": {"severe_risk_miles": 5.0, "high_risk_miles": 0.0, "no_travel_miles": 0.0, "unknown_risk_miles": 0.0, "has_missing_weather": False, "average_risk_score": 1.2}
+        }
+        rec = select_recommended_route([r1, r2, r3])
+        assert rec["is_any_safe"] is True
+        assert rec["recommended_route_id"] == "r2"
+        # Rankings order: r2 (0 severe, 10 high, 1.5 avg), r1 (0 severe, 10 high, 1.8 avg), r3 (5 severe)
+        ranking_ids = [item["route_id"] for item in rec["sorted_rankings"]]
+        assert ranking_ids == ["r2", "r1", "r3"]
+
+
 

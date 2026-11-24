@@ -150,6 +150,21 @@ export const RouteComparison: React.FC<RouteComparisonProps> = ({
                 </div>
               )}
 
+              {/* Routing Profile & Commercial Truck Disclosure */}
+              {route.profile_disclosure && (
+                <div className="mb-2 p-1.5 rounded bg-slate-50 border border-slate-200 text-[10px] text-slate-600">
+                  <div className="font-semibold text-slate-700 flex items-center justify-between">
+                    <span>{route.routing_profile || route.provider}</span>
+                    <span className={route.truck_restrictions_enforced ? "text-emerald-700 font-bold" : "text-amber-700 font-medium"}>
+                      {route.truck_restrictions_enforced ? "HGV limits enforced" : "General traffic geometry"}
+                    </span>
+                  </div>
+                  <div className="text-[9px] text-slate-500 mt-0.5 leading-tight">
+                    {route.profile_disclosure}
+                  </div>
+                </div>
+              )}
+
               {/* Selection Indicator Button */}
               <div className="pt-1">
                 <button

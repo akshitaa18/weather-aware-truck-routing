@@ -60,4 +60,92 @@ class TestMultiSourceRoutingManager:
         for r in routes:
             assert r["is_simulated"] is True
             assert r["is_verified_road_route"] is False
+            assert r["routing_profile"] == "simulated"
+            assert r["truck_restrictions_enforced"] is False
+            assert "Simulated Corridor" in r["profile_disclosure"]
+
+    def test_routes_are_substantially_different_by_distance(self):
+        from routing.services.routing_provider import routes_are_substantially_different
+        r1 = {"distance_miles": 100.0, "coordinates": [[40.0, -75.0], [41.0, -74.0]]}
+        r2 = {"distance_miles": 110.0, "coordinates": [[40.0, -75.0], [41.0, -74.0]]}
+        assert routes_are_substantially_different(r1, r2) is True
+
+    def test_routes_are_substantially_different_by_intermediate_divergence(self):
+        from routing.services.routing_provider import routes_are_substantially_different
+        # Same distance, but diverging path through different latitude
+        r1 = {
+            "distance_miles": 100.0,
+            "coordinates": [[40.0, -75.0], [40.2, -75.0], [40.5, -75.0], [41.0, -75.0]]
+        }
+        r2 = {
+            "distance_miles": 100.0,
+            "coordinates": [[40.0, -75.0], [40.2, -74.5], [40.5, -74.2], [41.0, -75.0]]
+        }
+        # Longitude difference at 50% is 0.8 degrees (~40 miles)
+        assert routes_are_substantially_different(r1, r2) is True
+
+    def test_identical_routes_are_not_substantially_different(self):
+        from routing.services.routing_provider import routes_are_substantially_different
+        r1 = {
+            "distance_miles": 100.0,
+            "coordinates": [[40.0, -75.0], [40.25, -74.8], [40.5, -74.5], [41.0, -74.0]]
+        }
+        r2 = {
+            "distance_miles": 100.1,
+            "coordinates": [[40.0, -75.0], [40.25, -74.8], [40.5, -74.5], [41.0, -74.0]]
+        }
+        assert routes_are_substantially_different(r1, r2) is False
+
+    @patch.object(OpenRouteServiceProvider, "get_three_routes")
+    @patch.object(OSRMProvider, "get_three_routes")
+    def test_manager_deduplicates_and_reindexes_route_ids(self, mock_osrm, mock_ors):
+        # ORS returns 2 routes
+        ors_r1 = {
+            "id": "route_1",
+            "name": "ORS Primary",
+            "distance_miles": 280.0,
+            "coordinates": [[41.87, -87.62], [42.1, -85.5], [42.33, -83.04]],
+            "routing_profile": "driving-hgv",
+            "truck_restrictions_enforced": True,
+        }
+        ors_r2 = {
+            "id": "route_2",
+            "name": "ORS Alternative",
+            "distance_miles": 310.0,
+            "coordinates": [[41.87, -87.62], [41.5, -85.2], [42.33, -83.04]],
+            "routing_profile": "driving-hgv",
+            "truck_restrictions_enforced": True,
+        }
+        mock_ors.return_value = [ors_r1, ors_r2]
+
+        # OSRM returns 1 duplicate of ors_r1 and 1 distinct corridor
+        osrm_dup = {
+            "id": "route_1",
+            "name": "OSRM Primary Duplicate",
+            "distance_miles": 280.2,
+            "coordinates": [[41.87, -87.62], [42.1, -85.5], [42.33, -83.04]],
+            "routing_profile": "driving (general)",
+            "truck_restrictions_enforced": False,
+        }
+        osrm_distinct = {
+            "id": "route_2",
+            "name": "OSRM Northern",
+            "distance_miles": 340.0,
+            "coordinates": [[41.87, -87.62], [42.8, -85.0], [42.33, -83.04]],
+            "routing_profile": "driving (general)",
+            "truck_restrictions_enforced": False,
+        }
+        mock_osrm.return_value = [osrm_dup, osrm_distinct]
+
+        manager = MultiSourceRoutingManager()
+        routes = manager.get_three_routes((41.87, -87.62), (42.33, -83.04), "Chicago", "Detroit")
+
+        assert len(routes) == 3
+        # Unique sequential IDs
+        assert [r["id"] for r in routes] == ["route_1", "route_2", "route_3"]
+        # Duplicate osrm_dup was dropped; osrm_distinct was included
+        names = [r["name"] for r in routes]
+        assert "OSRM Primary Duplicate" not in names
+        assert "OSRM Northern" in names
+
 

@@ -113,6 +113,9 @@ export interface RouteData {
   origin_coords: [number, number];
   destination_coords: [number, number];
   provider: string;
+  routing_profile?: string;
+  truck_restrictions_enforced?: boolean;
+  profile_disclosure?: string;
   is_simulated?: boolean;
   is_verified_road_route?: boolean;
   simulation_warning?: string;

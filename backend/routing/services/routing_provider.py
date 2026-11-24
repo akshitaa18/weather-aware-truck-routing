@@ -15,6 +15,8 @@ from requests.adapters import HTTPAdapter
 from typing import List, Dict, Any, Tuple, Optional
 from concurrent.futures import ThreadPoolExecutor
 
+from .checkpoint_generator import haversine_distance_miles
+
 logger = logging.getLogger(__name__)
 
 METERS_TO_MILES = 0.000621371
@@ -24,6 +26,35 @@ _ROUTING_SESSION = requests.Session()
 _ROUTING_ADAPTER = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=1)
 _ROUTING_SESSION.mount("https://", _ROUTING_ADAPTER)
 _ROUTING_SESSION.mount("http://", _ROUTING_ADAPTER)
+
+
+def routes_are_substantially_different(r1: Dict[str, Any], r2: Dict[str, Any]) -> bool:
+    """
+    Check if two routes follow substantially distinct driving corridors.
+    Routes are considered distinct if:
+    1. Their distance differs by more than 5 miles or 3%, OR
+    2. Any intermediate checkpoint / coordinate along the path diverges by > 10 miles.
+    """
+    d1 = r1.get("distance_miles", 0.0)
+    d2 = r2.get("distance_miles", 0.0)
+    if abs(d1 - d2) > 5.0 or (max(d1, d2) > 0 and abs(d1 - d2) / max(d1, d2) > 0.03):
+        return True
+
+    coords1 = r1.get("coordinates", [])
+    coords2 = r2.get("coordinates", [])
+    if not coords1 or not coords2:
+        return False
+
+    # Check divergence at 25%, 50%, and 75% along the polylines
+    for frac in (0.25, 0.50, 0.75):
+        idx1 = min(int(len(coords1) * frac), len(coords1) - 1)
+        idx2 = min(int(len(coords2) * frac), len(coords2) - 1)
+        lat1, lon1 = coords1[idx1]
+        lat2, lon2 = coords2[idx2]
+        if haversine_distance_miles(lat1, lon1, lat2, lon2) > 10.0:
+            return True
+
+    return False
 
 
 def format_duration(seconds: float) -> str:
@@ -132,6 +163,9 @@ class OpenRouteServiceProvider(RoutingProvider):
                         "origin_coords": list(origin_coords),
                         "destination_coords": list(destination_coords),
                         "provider": "OpenRouteService (HGV)",
+                        "routing_profile": "driving-hgv",
+                        "truck_restrictions_enforced": True,
+                        "profile_disclosure": "OpenRouteService HGV — Heavy goods vehicle profile enforcing commercial truck dimensions and restrictions.",
                         "is_simulated": False,
                         "is_verified_road_route": True,
                     })
@@ -145,6 +179,7 @@ class OSRMProvider(RoutingProvider):
     """
     OSRM routing provider with Smart Corridor Waypoint Strategy.
     Generates genuine driving routes across real highway networks.
+    Discloses that OSRM driving profile does not enforce commercial truck height/weight limits.
     """
     BASE_URL = "https://router.project-osrm.org/route/v1/driving"
 
@@ -178,7 +213,7 @@ class OSRMProvider(RoutingProvider):
                         steps.extend(leg.get("steps", []))
                     name = extract_route_name(steps, f"Route {len(routes) + 1}")
 
-                    routes.append({
+                    candidate = {
                         "id": f"route_{len(routes) + 1}",
                         "name": name,
                         "distance_miles": round(dist_meters * METERS_TO_MILES, 1),
@@ -190,9 +225,14 @@ class OSRMProvider(RoutingProvider):
                         "origin_coords": list(origin_coords),
                         "destination_coords": list(destination_coords),
                         "provider": "OSRM Routing Engine",
+                        "routing_profile": "driving (general)",
+                        "truck_restrictions_enforced": False,
+                        "profile_disclosure": "OSRM Driving — General road network; commercial truck height/weight restrictions not enforced.",
                         "is_simulated": False,
                         "is_verified_road_route": True,
-                    })
+                    }
+                    if not any(not routes_are_substantially_different(candidate, existing) for existing in routes):
+                        routes.append(candidate)
         except Exception as e:
             logger.warning("OSRM initial query error: %s", e)
 
@@ -214,7 +254,15 @@ class OSRMProvider(RoutingProvider):
             def fetch_via_corridor(m: float) -> Optional[Dict[str, Any]]:
                 via_lat = round(mid_lat + m * perp_lat, 4)
                 via_lon = round(mid_lon + m * perp_lon, 4)
-                corridor_tag = "Northern Corridor" if m > 0 else "Southern Corridor"
+                
+                # Geographically correct corridor labeling
+                delta_lat = via_lat - mid_lat
+                delta_lon = via_lon - mid_lon
+                if abs(delta_lat) >= abs(delta_lon):
+                    corridor_tag = "Northern Corridor" if delta_lat > 0 else "Southern Corridor"
+                else:
+                    corridor_tag = "Eastern Corridor" if delta_lon > 0 else "Western Corridor"
+
                 try:
                     via_url = f"{self.BASE_URL}/{lon1},{lat1};{via_lon},{via_lat};{lon2},{lat2}?overview=full&geometries=geojson&steps=true"
                     via_resp = _ROUTING_SESSION.get(via_url, timeout=7)
@@ -243,6 +291,9 @@ class OSRMProvider(RoutingProvider):
                                 "origin_coords": list(origin_coords),
                                 "destination_coords": list(destination_coords),
                                 "provider": f"OSRM ({corridor_tag})",
+                                "routing_profile": "driving (general)",
+                                "truck_restrictions_enforced": False,
+                                "profile_disclosure": "OSRM Driving — General road network; commercial truck height/weight restrictions not enforced.",
                                 "is_simulated": False,
                                 "is_verified_road_route": True,
                             }
@@ -255,8 +306,9 @@ class OSRMProvider(RoutingProvider):
 
             for res in corridor_results:
                 if res and len(routes) < 3:
-                    res["id"] = f"route_{len(routes) + 1}"
-                    routes.append(res)
+                    if not any(not routes_are_substantially_different(res, existing) for existing in routes):
+                        res["id"] = f"route_{len(routes) + 1}"
+                        routes.append(res)
 
         return routes[:3]
 
@@ -324,6 +376,9 @@ class FallbackCorridorProvider(RoutingProvider):
                 "origin_coords": list(origin_coords),
                 "destination_coords": list(destination_coords),
                 "provider": "Simulated Geometry Engine (Unverified)",
+                "routing_profile": "simulated",
+                "truck_restrictions_enforced": False,
+                "profile_disclosure": "Simulated Corridor — Mathematical curve for offline demonstration only; not a verified road route.",
                 "is_simulated": True,
                 "is_verified_road_route": False,
                 "simulation_warning": (
@@ -338,7 +393,7 @@ class FallbackCorridorProvider(RoutingProvider):
 class MultiSourceRoutingManager:
     """
     Coordinates primary (OpenRouteService) and secondary (OSRM with smart corridor routing).
-    Prefers returning genuine road routes or raising a clear error if actual road routing fails.
+    Deduplicates overlapping routes, re-indexes unique IDs, and requires 3 distinct routes.
     Simulated fallback is only used when allow_simulated_fallback=True or as a clearly labeled last resort.
     """
     def __init__(self):
@@ -358,34 +413,48 @@ class MultiSourceRoutingManager:
         ors_routes = self.ors_provider.get_three_routes(
             origin_coords, destination_coords, origin_name, destination_name
         )
-        if len(ors_routes) >= 3:
-            return ors_routes[:3]
 
         # 2. Try OSRM with smart corridor routing
         osrm_routes = self.osrm_provider.get_three_routes(
             origin_coords, destination_coords, origin_name, destination_name
         )
-        if len(osrm_routes) >= 3:
-            return osrm_routes[:3]
 
-        # Combine any genuine routes returned
-        combined = ors_routes + osrm_routes
-        if combined:
-            return combined[:3]
+        # Combine candidates (prioritize HGV routes from ORS, followed by OSRM)
+        candidates = ors_routes + osrm_routes
 
-        # 3. If real routing failed completely:
+        distinct_routes: List[Dict[str, Any]] = []
+        for cand in candidates:
+            # Check if cand is distinct from all already accepted routes
+            is_dup = False
+            for existing in distinct_routes:
+                if not routes_are_substantially_different(cand, existing):
+                    is_dup = True
+                    break
+            if not is_dup:
+                distinct_routes.append(cand)
+            if len(distinct_routes) == 3:
+                break
+
+        if len(distinct_routes) >= 3:
+            # Re-index unique sequential IDs: route_1, route_2, route_3
+            for idx, r in enumerate(distinct_routes[:3]):
+                r["id"] = f"route_{idx + 1}"
+            return distinct_routes[:3]
+
+        # 3. If real routing failed to provide 3 distinct routes:
         if allow_simulated_fallback:
-            logger.info("Routing service unavailable. Returning explicitly labeled simulated corridors for demonstration.")
+            logger.info("Routing service returned fewer than 3 verified routes. Returning explicitly labeled simulated corridors for demonstration.")
             return self.fallback_provider.get_three_routes(
                 origin_coords, destination_coords, origin_name, destination_name
             )
         
-        # Prefer raising a clear, informative error
+        # Raise a clear, informative error
         raise ValueError(
-            "Routing provider unavailable: Unable to compute verified highway routes between the specified locations. "
-            "Please check network connectivity or try again in a few moments."
+            "Routing provider unavailable: Unable to compute 3 distinct verified highway routes between the specified locations. "
+            "Please check network connectivity or enable simulated demonstration mode."
         )
 
 
 # Global instance
 routing_manager = MultiSourceRoutingManager()
+

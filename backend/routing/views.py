@@ -2,6 +2,8 @@
 API Views for Weather-Aware Truck Routing.
 """
 
+import logging
+from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -9,6 +11,8 @@ import requests
 
 from .serializers import AnalyzeRouteRequestSerializer
 from .services import analyze_weather_truck_routes, geocode_location
+
+logger = logging.getLogger(__name__)
 
 
 class AnalyzeRoutesView(APIView):
@@ -50,10 +54,16 @@ class AnalyzeRoutesView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
+            logger.exception("Unexpected error during route analysis: %s", e)
+            msg = (
+                f"Internal server error: {str(e)}"
+                if getattr(settings, 'DEBUG', False)
+                else "An unexpected server error occurred during route analysis. Please try again later."
+            )
             return Response(
                 {
                     "status": "error",
-                    "message": f"An unexpected error occurred during route analysis: {str(e)}"
+                    "message": msg
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

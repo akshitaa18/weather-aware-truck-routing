@@ -5,15 +5,15 @@ services:
     image: postgres:15-alpine
     container_name: weather_truck_db
     environment:
-      POSTGRES_DB: weather_routing
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: ${POSTGRES_DB:-weather_routing}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,10 +24,10 @@ services:
       dockerfile: Dockerfile
     container_name: weather_truck_backend
     environment:
-      DJANGO_SECRET_KEY: production-django-secret-key-truck-routing-2026
-      DEBUG: "False"
-      ALLOWED_HOSTS: "localhost,127.0.0.1,backend,frontend"
-      DATABASE_URL: "postgres://postgres:postgrespassword@db:5432/weather_routing"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-production-django-secret-key-truck-routing-2026}
+      DEBUG: ${DEBUG:-False}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend}
+      DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@db:5432/${POSTGRES_DB:-weather_routing}"
     ports:
       - "8000:8000"
     depends_on:

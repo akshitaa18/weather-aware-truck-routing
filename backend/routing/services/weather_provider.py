@@ -143,7 +143,9 @@ class OpenMeteoWeatherProvider(WeatherProvider):
 
             times = forecast_data.get("time", [])
             winds = forecast_data.get("windspeed_10m", [])
-            precips = forecast_data.get("precipitation", [])
+            rains = forecast_data.get("rain")
+            showers = forecast_data.get("showers")
+            precips = forecast_data.get("precipitation")
             snows = forecast_data.get("snowfall", [])
             temps = forecast_data.get("temperature_2m", [])
 
@@ -157,12 +159,24 @@ class OpenMeteoWeatherProvider(WeatherProvider):
             # Check if target hour is genuinely available
             if matched_idx >= 0 and matched_idx < len(times):
                 w_raw = winds[matched_idx] if matched_idx < len(winds) else None
-                r_raw = precips[matched_idx] if matched_idx < len(precips) else None
                 s_raw = snows[matched_idx] if matched_idx < len(snows) else None
                 t_raw = temps[matched_idx] if matched_idx < len(temps) else None
 
+                # Calculate liquid rain as rain + showers (preserving None if either component is missing)
+                if rains is not None and showers is not None:
+                    rain_raw = rains[matched_idx] if matched_idx < len(rains) else None
+                    shower_raw = showers[matched_idx] if matched_idx < len(showers) else None
+                    if rain_raw is not None and shower_raw is not None:
+                        cp["rain_intensity_in_hr"] = round(float(rain_raw) + float(shower_raw), 2)
+                    else:
+                        cp["rain_intensity_in_hr"] = None
+                elif precips is not None:
+                    p_raw = precips[matched_idx] if matched_idx < len(precips) else None
+                    cp["rain_intensity_in_hr"] = round(float(p_raw), 2) if p_raw is not None else None
+                else:
+                    cp["rain_intensity_in_hr"] = None
+
                 cp["wind_speed_mph"] = round(float(w_raw), 1) if w_raw is not None else None
-                cp["rain_intensity_in_hr"] = round(float(r_raw), 2) if r_raw is not None else None
                 cp["snow_intensity_in_hr"] = round(float(s_raw), 2) if s_raw is not None else None
                 cp["temperature_f"] = round(float(t_raw) * 9.0 / 5.0 + 32.0, 1) if t_raw is not None else None
 
@@ -190,11 +204,22 @@ class OpenMeteoWeatherProvider(WeatherProvider):
                 if target_str in times:
                     t_idx = times.index(target_str)
                     w_val = winds[t_idx] if t_idx < len(winds) else None
-                    r_val = precips[t_idx] if t_idx < len(precips) else None
                     s_val = snows[t_idx] if t_idx < len(snows) else None
 
+                    if rains is not None and showers is not None:
+                        r_part = rains[t_idx] if t_idx < len(rains) else None
+                        sh_part = showers[t_idx] if t_idx < len(showers) else None
+                        if r_part is not None and sh_part is not None:
+                            r_in = round(float(r_part) + float(sh_part), 2)
+                        else:
+                            r_in = None
+                    elif precips is not None:
+                        p_val = precips[t_idx] if t_idx < len(precips) else None
+                        r_in = round(float(p_val), 2) if p_val is not None else None
+                    else:
+                        r_in = None
+
                     w_mph = round(float(w_val), 1) if w_val is not None else None
-                    r_in = round(float(r_val), 2) if r_val is not None else None
                     s_in = round(float(s_val), 2) if s_val is not None else None
 
                     # forecast_available=False if any required weather measurement is missing
@@ -233,7 +258,7 @@ class OpenMeteoWeatherProvider(WeatherProvider):
         params = {
             "latitude": lats_str,
             "longitude": lons_str,
-            "hourly": "temperature_2m,windspeed_10m,precipitation,snowfall",
+            "hourly": "temperature_2m,windspeed_10m,rain,showers,snowfall",
             "windspeed_unit": "mph",
             "precipitation_unit": "inch",
             "forecast_days": 7,
